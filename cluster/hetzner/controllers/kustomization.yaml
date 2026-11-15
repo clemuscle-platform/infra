@@ -1,0 +1,48 @@
+# Couche « controllers » de l'environnement hetzner : base + composants propres à Hetzner.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base/controllers/cert-manager
+  - ../../base/controllers/cnpg
+  - ../../base/controllers/observability
+  - external-dns.yaml
+  - system-upgrade.yaml
+  - kured.yaml
+  - tailscale-operator.yaml
+  - secrets/openobserve-root.sops.yaml
+  - secrets/openobserve-ingest.sops.yaml
+  - secrets/openobserve-s3.sops.yaml
+  - secrets/cloudflare-api-token.sops.yaml
+  - secrets/tailscale-operator-oauth.sops.yaml
+patches:
+  # OpenObserve : stockage des données sur le bucket S3 (le disque ne sert plus que de cache).
+  - target:
+      kind: HelmRelease
+      name: openobserve
+    patch: |
+      - op: add
+        path: /spec/values/config/ZO_LOCAL_MODE_STORAGE
+        value: s3
+      - op: add
+        path: /spec/values/config/ZO_S3_SERVER_URL
+        value: ${S3_ENDPOINT}
+      - op: add
+        path: /spec/values/config/ZO_S3_REGION_NAME
+        value: ${S3_REGION}
+      - op: add
+        path: /spec/values/config/ZO_S3_BUCKET_NAME
+        value: ${S3_BUCKET_O2}
+      - op: add
+        path: /spec/valuesFrom
+        value:
+          - kind: Secret
+            name: openobserve-s3
+            valuesKey: ZO_S3_ACCESS_KEY
+            targetPath: auth.ZO_S3_ACCESS_KEY
+          - kind: Secret
+            name: openobserve-s3
+            valuesKey: ZO_S3_SECRET_KEY
+            targetPath: auth.ZO_S3_SECRET_KEY
+      - op: replace
+        path: /spec/values/persistence/size
+        value: 10Gi

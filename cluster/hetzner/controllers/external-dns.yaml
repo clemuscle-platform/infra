@@ -1,0 +1,63 @@
+# external-dns → Cloudflare (ADR-0011). upsert-only : ne supprime jamais un enregistrement de lui-même.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: external-dns
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: external-dns
+  namespace: flux-system
+spec:
+  interval: 6h
+  url: https://kubernetes-sigs.github.io/external-dns
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: external-dns
+  namespace: flux-system
+spec:
+  interval: 30m
+  releaseName: external-dns
+  targetNamespace: external-dns
+  storageNamespace: external-dns
+  serviceAccountName: flux-operator
+  chart:
+    spec:
+      chart: external-dns
+      version: 1.23.0
+      sourceRef:
+        kind: HelmRepository
+        name: external-dns
+  install:
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 3m
+  upgrade:
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 3m
+  values:
+    provider:
+      name: cloudflare
+    env:
+      - name: CF_API_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: cloudflare-api-token
+            key: api-token
+    sources: [ingress]
+    domainFilters: ["${CLUSTER_DOMAIN}"]
+    policy: upsert-only
+    registry: txt
+    txtOwnerId: "${CLUSTER_NAME}"
+    extraArgs:
+      - --cloudflare-proxied
+      - --cloudflare-dns-records-per-page=5000
+    resources:
+      requests: {cpu: 10m, memory: 32Mi}
+      limits: {memory: 96Mi}

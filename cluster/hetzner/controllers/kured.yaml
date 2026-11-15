@@ -1,0 +1,62 @@
+# Kured (ADR-0013) : redémarrage encadré après mise à jour transactionnelle de l'OS.
+# Fenêtre : mardi à jeudi, 3 h à 5 h (Europe/Paris). Un nœud à la fois.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kured
+  labels:
+    # kured a besoin de hostPID et de nsenter pour redémarrer l'hôte.
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: kubereboot
+  namespace: flux-system
+spec:
+  interval: 6h
+  url: https://kubereboot.github.io/charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kured
+  namespace: flux-system
+spec:
+  interval: 30m
+  releaseName: kured
+  targetNamespace: kured
+  storageNamespace: kured
+  serviceAccountName: flux-operator
+  chart:
+    spec:
+      chart: kured
+      version: 6.1.0
+      sourceRef:
+        kind: HelmRepository
+        name: kubereboot
+  install:
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 3m
+  upgrade:
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 3m
+  values:
+    configuration:
+      period: 10m
+      rebootDays: [tu, we, th]
+      startTime: "3:00"
+      endTime: "5:00"
+      timeZone: Europe/Paris
+      rebootSentinel: /var/run/reboot-required
+      rebootCommand: /bin/systemctl reboot
+      concurrency: 1
+      drainTimeout: 10m
+      annotateNodes: true
+      preRebootNodeLabels: ["kured=rebooting"]
+      postRebootNodeLabels: ["kured=done"]
+    resources:
+      requests: {cpu: 5m, memory: 16Mi}
+      limits: {memory: 64Mi}

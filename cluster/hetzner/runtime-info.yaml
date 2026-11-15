@@ -1,0 +1,35 @@
+# Variables de l'environnement « hetzner ». CLUSTER_ENV et CLUSTER_NAME sont aussi posés par OpenTofu
+# (runtime_info) ; cette ConfigMap complète les champs par fusion SSA.
+# Valeurs « CHANGE_ME » / example.com : provisoires, à remplacer avant la migration (runbook migration-hetzner).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flux-runtime-info
+  namespace: flux-system
+  labels:
+    toolkit.fluxcd.io/runtime: "true"
+    reconcile.fluxcd.io/watch: Enabled
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: "Merge"
+data:
+  CLUSTER_ENV: hetzner
+  CLUSTER_NAME: platform
+  CLUSTER_DOMAIN: example.com
+  CLUSTER_ISSUER: letsencrypt
+  ACME_EMAIL: admin@example.com
+  GITHUB_ORG: clemuscle-platform
+  # kube-hetzner installe Traefik dans le namespace « traefik ».
+  INGRESS_NAMESPACE: traefik
+  STORAGE_CLASS: hcloud-volumes
+  # hcloud-volumes arrondit à 10 Go minimum (facturés) : préversions limitées à 2.
+  PREVIEW_STORAGE_CLASS: hcloud-volumes
+  PREVIEW_MAX: "2"
+  OCI_VERIFY: "true"
+  S3_ENDPOINT: https://fsn1.your-objectstorage.com
+  S3_REGION: fsn1
+  S3_BUCKET_PG: CHANGE_ME-pg
+  S3_BUCKET_APPS: CHANGE_ME-apps
+  S3_BUCKET_O2: CHANGE_ME-o2
+  S3_BUCKET_ETCD: CHANGE_ME-etcd
+  OFFSITE_S3_ENDPOINT: https://CHANGE_ME.r2.cloudflarestorage.com
+  OFFSITE_BUCKET: CHANGE_ME-offsite

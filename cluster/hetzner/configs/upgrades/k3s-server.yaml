@@ -1,0 +1,29 @@
+# Montée de version de k3s (ADR-0013). Version EXACTE, jamais de channel.
+#   - correctif (1.35.x)      : PR Renovate, fusion automatique si les contrôles passent ;
+#   - mineure (1.35 → 1.36)   : validation humaine obligatoire (CODEOWNERS + contrôle k3s-minor-guard).
+# Toujours une seule version mineure à la fois. Runbook : docs/runbooks/montee-version-k3s.md
+apiVersion: upgrade.cattle.io/v1
+kind: Plan
+metadata:
+  name: k3s-server
+  namespace: system-upgrade
+spec:
+  # renovate: datasource=github-releases depName=k3s-io/k3s
+  version: v1.35.10+k3s1
+  concurrency: 1
+  # Nœud unique : cordon sans drain (le drain bloquerait sur les PDB et les volumes).
+  cordon: true
+  serviceAccountName: system-upgrade
+  nodeSelector:
+    matchExpressions:
+      - {key: node-role.kubernetes.io/control-plane, operator: In, values: ["true"]}
+  tolerations:
+    - {key: CriticalAddonsOnly, operator: Exists}
+    - {key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule}
+  upgrade:
+    image: rancher/k3s-upgrade
+  window:
+    days: [tuesday]
+    startTime: "03:00"
+    endTime: "05:00"
+    timeZone: Europe/Paris

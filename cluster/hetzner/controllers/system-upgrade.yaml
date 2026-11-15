@@ -1,0 +1,53 @@
+# System Upgrade Controller (ADR-0013), installé depuis le dépôt amont à une étiquette figée.
+# Les Plan (versions de k3s) sont dans cluster/hetzner/configs/upgrades/.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: system-upgrade-controller
+  namespace: flux-system
+spec:
+  interval: 6h
+  url: https://github.com/rancher/system-upgrade-controller
+  ref:
+    tag: v0.21.1
+  ignore: |
+    /*
+    !/kustomization.yaml
+    !/manifests/
+    !/pkg/crds/yaml/generated/
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: system-upgrade-crds
+  namespace: flux-system
+spec:
+  serviceAccountName: flux-operator
+  interval: 6h
+  prune: false
+  path: ./pkg/crds/yaml/generated
+  sourceRef:
+    kind: GitRepository
+    name: system-upgrade-controller
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: system-upgrade-controller
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: system-upgrade-crds
+  serviceAccountName: flux-operator
+  interval: 6h
+  prune: true
+  wait: true
+  timeout: 5m
+  path: ./
+  sourceRef:
+    kind: GitRepository
+    name: system-upgrade-controller
+  # Le kustomization.yaml amont de v0.21.1 référence encore l'image v0.20.1.
+  images:
+    - name: rancher/system-upgrade-controller
+      newTag: v0.21.1

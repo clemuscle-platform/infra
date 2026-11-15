@@ -1,0 +1,79 @@
+# Copie quotidienne des sauvegardes hors de l'hébergeur (ADR-0008) : Hetzner Object Storage → R2 (ou B2).
+# « copy » et non « sync » : une suppression côté source (rétention CNPG) n'efface rien côté copie.
+# La rétention de la copie est gérée par une règle de cycle de vie sur le bucket de destination (90 jours).
+# Échec du Job → événement Kubernetes → OTel → OpenObserve → alerte « backup-offsite » (ADR-0014).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform-backup
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: offsite-copy
+  namespace: platform-backup
+spec:
+  schedule: "30 4 * * *"
+  timeZone: Europe/Paris
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 10800
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: rclone
+              image: rclone/rclone:1.76.0
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  for b in $SRC_BUCKETS; do
+                    echo "copie de $b"
+                    rclone copy "src:$b" "dst:$OFFSITE_BUCKET/$b" --checksum --fast-list --transfers 4 --stats-one-line --stats 60s
+                  done
+                  date -u +%Y-%m-%dT%H:%M:%SZ | rclone rcat "dst:$OFFSITE_BUCKET/_last_success"
+                  echo "copie hors hébergeur terminée"
+              env:
+                - {name: HOME, value: /tmp}
+                - {name: SRC_BUCKETS, value: "${S3_BUCKET_PG} ${S3_BUCKET_ETCD} ${S3_BUCKET_APPS}"}
+                - {name: OFFSITE_BUCKET, value: "${OFFSITE_BUCKET}"}
+                - {name: RCLONE_CONFIG_SRC_TYPE, value: s3}
+                - {name: RCLONE_CONFIG_SRC_PROVIDER, value: Other}
+                - {name: RCLONE_CONFIG_SRC_ENDPOINT, value: "${S3_ENDPOINT}"}
+                - {name: RCLONE_CONFIG_SRC_REGION, value: "${S3_REGION}"}
+                - {name: RCLONE_CONFIG_DST_TYPE, value: s3}
+                - {name: RCLONE_CONFIG_DST_PROVIDER, value: Cloudflare}
+                - {name: RCLONE_CONFIG_DST_ENDPOINT, value: "${OFFSITE_S3_ENDPOINT}"}
+                - {name: RCLONE_CONFIG_DST_NO_CHECK_BUCKET, value: "true"}
+              envFrom:
+                - secretRef:
+                    # RCLONE_CONFIG_SRC_ACCESS_KEY_ID / _SECRET_ACCESS_KEY (lecture seule)
+                    # RCLONE_CONFIG_DST_ACCESS_KEY_ID / _SECRET_ACCESS_KEY (écriture seule si possible)
+                    name: offsite-credentials
+              resources:
+                requests: {cpu: 50m, memory: 64Mi}
+                limits: {memory: 256Mi}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - {name: tmp, mountPath: /tmp}
+          volumes:
+            - name: tmp
+              emptyDir: {}
