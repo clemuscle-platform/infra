@@ -1,5 +1,5 @@
 # FluxInstance : créée une première fois par OpenTofu (module flux-operator-bootstrap),
-# puis gérée par Flux depuis ce fichier. Les surcouches ne modifient que sync.path et cluster.size.
+# puis gérée par Flux depuis ce fichier. Aucune surcouche ne la modifie : sync.path dépend de CLUSTER_ENV.
 apiVersion: fluxcd.controlplane.io/v1
 kind: FluxInstance
 metadata:
@@ -32,7 +32,7 @@ spec:
     kind: GitRepository
     url: "https://github.com/clemuscle-platform/infra.git"
     ref: "refs/heads/main"
-    path: "cluster/CHANGE_ME"   # remplacé par la surcouche
+    path: "cluster/${CLUSTER_ENV}"   # résolu à l'amorçage (runtime_info) puis par la Kustomization racine
     pullSecret: "github-app"    # Secret créé par OpenTofu (GitHub App platform-flux)
     provider: github
     interval: 5m
