@@ -1,0 +1,12 @@
+# Valeurs partagées entre OpenTofu (amorçage) et la HelmRelease gérée par Flux.
+multitenancy:
+  enabled: true
+  defaultServiceAccount: flux-operator
+reporting:
+  interval: 60s
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi

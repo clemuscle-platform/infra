@@ -1,0 +1,27 @@
+# OpenTofu
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan*
+crash.log
+*.auto.tfvars
+!*.example.auto.tfvars
+terraform.tfvars
+
+# Secrets et clés : jamais dans Git
+*.agekey
+keys.txt
+*.pem
+*.key
+.env
+.env.*
+*.dec.yaml
+kubeconfig*
+!docs/**/kubeconfig*
+
+# Validation
+.cache/
+.schemas/
+out/
+cluster/base/policies/tests/.rendered/

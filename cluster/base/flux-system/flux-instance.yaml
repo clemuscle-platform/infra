@@ -1,0 +1,65 @@
+# FluxInstance : créée une première fois par OpenTofu (module flux-operator-bootstrap),
+# puis gérée par Flux depuis ce fichier. Les surcouches ne modifient que sync.path et cluster.size.
+apiVersion: fluxcd.controlplane.io/v1
+kind: FluxInstance
+metadata:
+  name: flux
+  namespace: flux-system
+  annotations:
+    fluxcd.controlplane.io/reconcileEvery: "1h"
+    fluxcd.controlplane.io/reconcileTimeout: "5m"
+spec:
+  distribution:
+    # Version figée : Renovate propose les montées (ADR-0013).
+    version: "2.10.0"
+    registry: "ghcr.io/fluxcd"
+    artifact: "oci://ghcr.io/controlplaneio-fluxcd/flux-operator-manifests:v0.62.1"
+  components:
+    - source-controller
+    - kustomize-controller
+    - helm-controller
+    - notification-controller
+  cluster:
+    type: kubernetes
+    size: small
+    # Verrouillage multi-tenant : toute Kustomization/HelmRelease sans serviceAccountName
+    # utilise le compte « flux » de son espace de noms, qui n'existe pas par défaut.
+    multitenant: true
+    tenantDefaultServiceAccount: flux
+    networkPolicy: true
+    domain: cluster.local
+  sync:
+    kind: GitRepository
+    url: "https://github.com/clemuscle-platform/infra.git"
+    ref: "refs/heads/main"
+    path: "cluster/CHANGE_ME"   # remplacé par la surcouche
+    pullSecret: "github-app"    # Secret créé par OpenTofu (GitHub App platform-flux)
+    provider: github
+    interval: 5m
+  kustomize:
+    patches:
+      # La Kustomization racine reçoit les variables d'environnement et le déchiffrement SOPS.
+      - target:
+          kind: Kustomization
+          name: flux-system
+        patch: |
+          - op: add
+            path: /spec/postBuild
+            value:
+              substituteFrom:
+                - kind: ConfigMap
+                  name: flux-runtime-info
+          - op: add
+            path: /spec/decryption
+            value:
+              provider: sops
+              secretRef:
+                name: sops-age
+      # Une variable non définie fait échouer la réconciliation au lieu d'être remplacée par une chaîne vide.
+      - target:
+          kind: Deployment
+          name: kustomize-controller
+        patch: |
+          - op: add
+            path: /spec/template/spec/containers/0/args/-
+            value: --feature-gates=StrictPostBuildSubstitutions=true

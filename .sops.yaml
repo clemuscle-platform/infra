@@ -1,0 +1,15 @@
+# Règles de chiffrement SOPS (ADR-0007).
+# Seuls data/stringData sont chiffrés, pour que les manifestes restent lisibles et validables.
+# AGE_RECOVERY : clé de secours hors ligne, à ajouter dans chaque règle quand elle existera.
+# AGE_HETZNER  : clé de l'environnement Hetzner, à générer avant la phase de migration.
+creation_rules:
+  - path_regex: ^cluster/local/.*\.sops\.ya?ml$
+    encrypted_regex: ^(data|stringData)$
+    age: >-
+      age18enzprddd0at7gzk4929j4x093u3z52lvmcjv308yua2clfsh5zqx46utu
+  - path_regex: ^cluster/hetzner/.*\.sops\.ya?ml$
+    encrypted_regex: ^(data|stringData)$
+    # Clé provisoire : la clé locale, en attendant la clé Hetzner.
+    # À remplacer, puis `sops updatekeys` sur chaque fichier de cluster/hetzner/.
+    age: >-
+      age18enzprddd0at7gzk4929j4x093u3z52lvmcjv308yua2clfsh5zqx46utu
