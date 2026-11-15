@@ -2,14 +2,15 @@
 # Crée les Secrets de l'environnement HETZNER avec des valeurs factices « A-REMPLACER », chiffrées SOPS.
 # Les vraies valeurs sont listées dans docs/secrets-de-depart.md et saisies avec « sops <fichier> »
 # une fois la clé age hetzner générée (et .sops.yaml mis à jour, puis « sops updatekeys »).
-# Ne remplace pas un fichier existant.
+# Ne remplace pas un fichier existant, sauf avec --force.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 P="A-REMPLACER"
+FORCE="${1:-}"
 
 write_secret() {
   local path=$1
-  if [[ -e $path ]]; then echo "existe déjà : $path"; cat >/dev/null; return; fi
+  if [[ -e $path && $FORCE != --force ]]; then echo "existe déjà : $path"; cat >/dev/null; return; fi
   mkdir -p "$(dirname "$path")"
   sops --encrypt --filename-override "$path" --input-type yaml --output-type yaml /dev/stdin > "$path.tmp"
   mv "$path.tmp" "$path"
@@ -75,6 +76,7 @@ type: Opaque
 stringData:
   AWS_ACCESS_KEY_ID: "$P"
   AWS_SECRET_ACCESS_KEY: "$P"
+  AWS_DEFAULT_REGION: "fsn1"
 EOF
 
 write_secret $G/cloudflare-api-token-cert-manager.sops.yaml <<EOF

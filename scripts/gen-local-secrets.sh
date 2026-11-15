@@ -52,6 +52,7 @@ type: Opaque
 stringData:
   AWS_ACCESS_KEY_ID: "$S3_KEY"
   AWS_SECRET_ACCESS_KEY: "$S3_SECRET"
+  AWS_DEFAULT_REGION: "garage"
 EOF
 
 write_secret cluster/local/controllers/secrets/openobserve-root.sops.yaml <<EOF
