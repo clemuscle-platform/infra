@@ -25,3 +25,5 @@ kubeconfig*
 .schemas/
 out/
 cluster/base/policies/tests/.rendered/
+backend.hcl
+.terraform.lock.hcl.bak

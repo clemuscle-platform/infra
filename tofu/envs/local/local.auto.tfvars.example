@@ -1,0 +1,9 @@
+# Copier en local.auto.tfvars (ignoré par Git) et compléter. Aucune valeur secrète ici :
+# les secrets passent par des chemins de fichiers locaux ou des variables TF_VAR_*.
+#   export TF_VAR_state_passphrase='...'   # gestionnaire de mots de passe
+#   export TF_VAR_ghcr_token='...'         # PAT classique read:packages
+github_app_id               = 0000000
+github_app_installation_id  = 00000000
+github_app_private_key_file = "~/.config/platform/github-app-platform-flux.pem"
+ghcr_username               = "clemuscle"
+# age_key_file              = "~/.config/sops/age/keys.txt"
