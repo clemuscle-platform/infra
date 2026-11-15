@@ -1,0 +1,90 @@
+# CloudNativePG + plugin Barman Cloud (ADR-0009).
+# Le nom de release « cloudnative-pg » fixe le ServiceAccount de l'opérateur (cnpg-system/cloudnative-pg),
+# auquel les règles d'admission font référence.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cnpg-system
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: cnpg
+  namespace: flux-system
+spec:
+  interval: 6h
+  url: https://cloudnative-pg.github.io/charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cloudnative-pg
+  namespace: flux-system
+spec:
+  interval: 30m
+  releaseName: cloudnative-pg
+  targetNamespace: cnpg-system
+  storageNamespace: cnpg-system
+  serviceAccountName: flux-operator
+  chart:
+    spec:
+      chart: cloudnative-pg
+      version: 0.29.1
+      sourceRef:
+        kind: HelmRepository
+        name: cnpg
+  install:
+    crds: CreateReplace
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 3m
+  upgrade:
+    crds: CreateReplace
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 3m
+  values:
+    fullnameOverride: cloudnative-pg
+    resources:
+      requests: {cpu: 20m, memory: 96Mi}
+      limits: {memory: 256Mi}
+    config:
+      clusterWide: true
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: plugin-barman-cloud
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: cloudnative-pg
+    - name: cert-manager
+  interval: 30m
+  releaseName: plugin-barman-cloud
+  targetNamespace: cnpg-system
+  storageNamespace: cnpg-system
+  serviceAccountName: flux-operator
+  chart:
+    spec:
+      chart: plugin-barman-cloud
+      version: 0.9.0
+      sourceRef:
+        kind: HelmRepository
+        name: cnpg
+  install:
+    crds: CreateReplace
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 3m
+  upgrade:
+    crds: CreateReplace
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 3m
+  values:
+    resources:
+      requests: {cpu: 10m, memory: 32Mi}
+      limits: {memory: 128Mi}

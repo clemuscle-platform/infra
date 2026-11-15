@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - openobserve.yaml
+  - otel-collector.yaml
+configMapGenerator:
+  - name: otel-collector-values
+    namespace: flux-system
+    files:
+      - values.yaml=otel-values.yaml
+    options:
+      annotations:
+        # Les ${env:...} appartiennent au collecteur : Flux ne doit pas les substituer.
+        kustomize.toolkit.fluxcd.io/substitute: disabled
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    reconcile.fluxcd.io/watch: Enabled

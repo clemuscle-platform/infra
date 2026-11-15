@@ -1,0 +1,119 @@
+# Valeurs du chart opentelemetry-collector.
+# Ce fichier est servi par une ConfigMap marquée « substitute: disabled » : les ${env:...}
+# sont interprétés par le collecteur, pas par Flux. Dans la config du collecteur, « $$ » = « $ » littéral.
+# Les processeurs transform/redact et redaction sont testés par tests/redaction (make test-redaction).
+fullnameOverride: otel-collector
+mode: daemonset
+image:
+  repository: otel/opentelemetry-collector-contrib
+command:
+  name: otelcol-contrib
+presets:
+  logsCollection:
+    enabled: true
+    includeCollectorLogs: false
+  kubernetesAttributes:
+    enabled: true
+  kubeletMetrics:
+    enabled: true
+  kubernetesEvents:
+    enabled: true
+service:
+  enabled: true
+  internalTrafficPolicy: Local
+ports:
+  jaeger-compact: {enabled: false}
+  jaeger-thrift: {enabled: false}
+  jaeger-grpc: {enabled: false}
+  zipkin: {enabled: false}
+extraEnvsFrom:
+  - secretRef:
+      # Clé O2_AUTH = « Basic <base64(email:mot de passe)> » ; fournie par la surcouche (SOPS).
+      name: openobserve-ingest
+resources:
+  requests: {cpu: 50m, memory: 128Mi}
+  limits: {memory: 320Mi}
+config:
+  extensions:
+    health_check:
+      endpoint: ${env:MY_POD_IP}:13133
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: ${env:MY_POD_IP}:4317
+        http:
+          endpoint: ${env:MY_POD_IP}:4318
+  processors:
+    memory_limiter:
+      check_interval: 5s
+      limit_percentage: 80
+      spike_limit_percentage: 25
+    batch:
+      send_batch_size: 2048
+      timeout: 5s
+    # 1. Retrait des en-têtes et paramètres sensibles, masquage dans le corps des journaux.
+    transform/redact:
+      error_mode: ignore
+      trace_statements:
+        - context: span
+          statements:
+            - delete_matching_keys(attributes, "(?i)^(http\\.request\\.header\\.(authorization|cookie|x-api-key|proxy-authorization)|http\\.response\\.header\\.set-cookie)$")
+            - replace_pattern(attributes["url.full"], "(?i)([?&](token|password|secret|code|api_key|access_token)=)[^&]*", "$$1***")
+            - replace_pattern(attributes["url.query"], "(?i)((^|&)(token|password|secret|code|api_key|access_token)=)[^&]*", "$$1***")
+            - replace_pattern(attributes["db.query.text"], "(?i)(password\\s*=?\\s*')[^']*'", "$$1***'")
+      log_statements:
+        - context: log
+          statements:
+            - delete_matching_keys(attributes, "(?i)^(http\\.request\\.header\\.(authorization|cookie|x-api-key)|http\\.response\\.header\\.set-cookie)$")
+            - replace_pattern(body, "-----BEGIN [A-Z ]*PRIVATE KEY-----[\\s\\S]*?-----END [A-Z ]*PRIVATE KEY-----", "[CLE-PRIVEE-MASQUEE]") where IsString(body)
+            - replace_pattern(body, "(?i)(bearer|basic)\\s+[A-Za-z0-9._~+/=-]{8,}", "$$1 ***") where IsString(body)
+            - replace_pattern(body, "(postgres(?:ql)?|mysql|redis|rediss|amqp|mongodb(?:\\+srv)?)://([^:/@\\s]+):[^@\\s]+@", "$$1://$$2:***@") where IsString(body)
+            - replace_pattern(body, "(?i)(\"?(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key)\"?\\s*[:=]\\s*\"?)[^\\s\"'&,;}]+", "$$1***") where IsString(body)
+            - replace_pattern(body, "gh[pousr]_[A-Za-z0-9]{36,255}", "[JETON-GITHUB]") where IsString(body)
+            - replace_pattern(body, "github_pat_[A-Za-z0-9_]{22,255}", "[JETON-GITHUB]") where IsString(body)
+            - replace_pattern(body, "\\b(AKIA|ASIA)[0-9A-Z]{16}\\b", "[CLE-AWS]") where IsString(body)
+            - replace_pattern(body, "eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}", "[JWT]") where IsString(body)
+            - replace_pattern(body, "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "[EMAIL]") where IsString(body)
+            - replace_pattern(body, "\\b[A-Z]{2}\\d{2}(?: ?[A-Z0-9]{4}){3,7}(?: ?[A-Z0-9]{1,3})?\\b", "[IBAN]") where IsString(body)
+            - replace_pattern(body, "\\b[3-6]\\d{3}[ -]?\\d{4}[ -]?\\d{4}[ -]?\\d{1,7}\\b", "[CARTE]") where IsString(body)
+            - replace_pattern(body, "(?:\\+33[ .]?|\\b0)[1-9](?:[ .-]?\\d{2}){4}\\b", "[TEL]") where IsString(body)
+    # 2. Valeurs d'attributs (spans, journaux, métriques) qui ressemblent à des secrets ou des données personnelles.
+    redaction:
+      allow_all_keys: true
+      blocked_key_patterns:
+        - "(?i).*(password|passwd|secret|token|api[_-]?key|authorization|cookie).*"
+      blocked_values:
+        - "gh[pousr]_[A-Za-z0-9]{36,255}"
+        - "github_pat_[A-Za-z0-9_]{22,255}"
+        - "\\b(AKIA|ASIA)[0-9A-Z]{16}\\b"
+        - "eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}"
+        - "-----BEGIN [A-Z ]*PRIVATE KEY-----"
+        - "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"
+        - "\\b[3-6]\\d{3}[ -]?\\d{4}[ -]?\\d{4}[ -]?\\d{1,7}\\b"
+        - "\\b[A-Z]{2}\\d{2}(?: ?[A-Z0-9]{4}){3,7}(?: ?[A-Z0-9]{1,3})?\\b"
+      summary: info
+  exporters:
+    otlphttp/openobserve:
+      endpoint: http://openobserve.platform-observability.svc:5080/api/default
+      headers:
+        Authorization: ${env:O2_AUTH}
+        stream-name: default
+      sending_queue:
+        enabled: true
+        queue_size: 2000
+  service:
+    extensions: [health_check]
+    pipelines:
+      traces:
+        receivers: [otlp]
+        processors: [memory_limiter, k8sattributes, transform/redact, redaction, batch]
+        exporters: [otlphttp/openobserve]
+      metrics:
+        receivers: [otlp]
+        processors: [memory_limiter, k8sattributes, redaction, batch]
+        exporters: [otlphttp/openobserve]
+      logs:
+        receivers: [otlp]
+        processors: [memory_limiter, k8sattributes, transform/redact, redaction, batch]
+        exporters: [otlphttp/openobserve]
