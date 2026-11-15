@@ -1,0 +1,49 @@
+# Déclaration de l'application « hello » (exemple issu d'app-template).
+# Ajouter une application = copier ce fichier, l'ajouter à kustomization.yaml, ouvrir une PR (validation humaine).
+#
+# Champs (tous des chaînes) :
+#   app          nom court, [a-z0-9-], ≤ 20 caractères : préfixe des namespaces et des hôtes
+#   repo         dépôt dans l'organisation GitHub (artefact ghcr.io/<org>/<repo>-deploy)
+#   tiers        niveaux permanents
+#   egress       none | https | smtp | https,smtp (sorties Internet autorisées)
+#   prodSemver   plage de versions déployées en production
+#   prodMemoryLimit / prodMemoryRequest : quota de production (optionnel)
+apiVersion: fluxcd.controlplane.io/v1
+kind: ResourceSetInputProvider
+metadata:
+  name: hello
+  namespace: flux-system
+  labels:
+    platform.io/declaration: app
+spec:
+  type: Static
+  defaultValues:
+    app: hello
+    repo: hello
+    tiers: "staging,prod"
+    egress: "none"
+    prodSemver: ">=0.1.0"
+---
+# Préversions : une par PR ouverte portant le label « preview ».
+apiVersion: fluxcd.controlplane.io/v1
+kind: ResourceSetInputProvider
+metadata:
+  name: hello-previews
+  namespace: flux-system
+  labels:
+    platform.io/declaration: preview
+  annotations:
+    fluxcd.controlplane.io/reconcileEvery: "3m"
+spec:
+  type: GitHubPullRequest
+  url: https://github.com/${GITHUB_ORG}/hello
+  secretRef:
+    name: github-app
+  filter:
+    labels: ["preview"]
+    limit: ${PREVIEW_MAX}
+  defaultValues:
+    app: hello
+    repo: hello
+    tiers: "preview"
+    egress: "none"

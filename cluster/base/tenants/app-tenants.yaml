@@ -1,0 +1,316 @@
+# Fabrique des environnements d'application (ADR-0002, ADR-0006).
+#
+# Entrées : les ResourceSetInputProvider de cluster/apps/ portant le label platform.io/declaration.
+#   - type Static (déclaration)      → tiers "staging,prod"
+#   - type GitHubPullRequest (PR)    → tiers "preview", inputs.id = numéro de PR
+#
+# Pour chaque (application, niveau) :
+#   Namespace (PSA restricted) + ResourceQuota + LimitRange + NetworkPolicy
+#   ServiceAccount flux-system/<env> + RoleBinding vers platform-tenant-deployer (dans le seul namespace)
+#   OCIRepository (artefact deploy/ signé) + Kustomization (déchiffrement SOPS, variables)
+#
+# Les variables Flux (flux-runtime-info, ex. CLUSTER_DOMAIN) sont remplacées AVANT le rendu
+# du gabarit << ... >>. Ne jamais écrire dollar-accolade hors d'un vrai nom de variable.
+apiVersion: fluxcd.controlplane.io/v1
+kind: ResourceSet
+metadata:
+  name: app-tenants
+  namespace: flux-system
+  annotations:
+    fluxcd.controlplane.io/reconcileEvery: "5m"
+spec:
+  serviceAccountName: flux-operator
+  inputsFrom:
+    - apiVersion: fluxcd.controlplane.io/v1
+      kind: ResourceSetInputProvider
+      selector:
+        matchExpressions:
+          - key: platform.io/declaration
+            operator: In
+            values: ["app", "preview"]
+  commonMetadata:
+    labels:
+      platform.io/managed-by: app-tenants
+  resourcesTemplate: |
+    <<- range $tier := splitList "," inputs.tiers >>
+    <<- $app := inputs.app >>
+    <<- $repo := get inputs "repo" | default inputs.app >>
+    <<- $name := printf "app-%s-%s" $app $tier >>
+    <<- $host := printf "%s-%s.${CLUSTER_DOMAIN}" $app $tier >>
+    <<- $storage := "${STORAGE_CLASS}" >>
+    <<- $mem := "1Gi" >><<- $memReq := "768Mi" >><<- $cpuReq := "500m" >><<- $pvc := "3" >>
+    <<- if eq $tier "prod" >>
+    <<- $host = printf "%s.${CLUSTER_DOMAIN}" $app >>
+    <<- $mem = get inputs "prodMemoryLimit" | default "1Gi" >>
+    <<- $memReq = get inputs "prodMemoryRequest" | default "768Mi" >>
+    <<- else if eq $tier "staging" >>
+    <<- $mem = "512Mi" >><<- $memReq = "384Mi" >><<- $cpuReq = "250m" >><<- $pvc = "2" >>
+    <<- else >>
+    <<- $name = printf "app-%s-pr-%s" $app (toString inputs.id) >>
+    <<- $host = printf "%s-pr-%s.${CLUSTER_DOMAIN}" $app (toString inputs.id) >>
+    <<- $storage = "${PREVIEW_STORAGE_CLASS}" >>
+    <<- $mem = "384Mi" >><<- $memReq = "256Mi" >><<- $cpuReq = "200m" >><<- $pvc = "1" >>
+    <<- end >>
+    <<- $egress := splitList "," (get inputs "egress" | default "none") >>
+    ---
+    apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: << $name >>
+      labels:
+        platform.io/managed: "true"
+        platform.io/app: << $app >>
+        platform.io/tier: << $tier >>
+        pod-security.kubernetes.io/enforce: restricted
+        pod-security.kubernetes.io/enforce-version: latest
+        pod-security.kubernetes.io/warn: restricted
+    ---
+    apiVersion: v1
+    kind: ResourceQuota
+    metadata:
+      name: platform-quota
+      namespace: << $name >>
+    spec:
+      hard:
+        requests.cpu: << $cpuReq | quote >>
+        requests.memory: << $memReq | quote >>
+        limits.memory: << $mem | quote >>
+        persistentvolumeclaims: << $pvc | quote >>
+        requests.storage: "20Gi"
+        services.loadbalancers: "0"
+        services.nodeports: "0"
+        count/jobs.batch: "20"
+        count/cronjobs.batch: "5"
+    ---
+    apiVersion: v1
+    kind: LimitRange
+    metadata:
+      name: platform-defaults
+      namespace: << $name >>
+    spec:
+      limits:
+        - type: Container
+          default:
+            memory: 256Mi
+          defaultRequest:
+            cpu: 50m
+            memory: 128Mi
+          max:
+            memory: << $mem | quote >>
+    ---
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: default-deny
+      namespace: << $name >>
+    spec:
+      podSelector: {}
+      policyTypes: [Ingress, Egress]
+    ---
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: allow-platform
+      namespace: << $name >>
+    spec:
+      podSelector: {}
+      policyTypes: [Ingress, Egress]
+      ingress:
+        - from:
+            - podSelector: {}
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: ${INGRESS_NAMESPACE}
+      egress:
+        - to:
+            - podSelector: {}
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: kube-system
+              podSelector:
+                matchLabels:
+                  k8s-app: kube-dns
+          ports:
+            - {protocol: UDP, port: 53}
+            - {protocol: TCP, port: 53}
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: platform-otel
+          ports:
+            - {protocol: TCP, port: 4317}
+            - {protocol: TCP, port: 4318}
+    ---
+    # PostgreSQL (CNPG) : l'opérateur joint les instances ; les instances joignent l'API et le S3.
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: allow-cnpg
+      namespace: << $name >>
+    spec:
+      podSelector:
+        matchExpressions:
+          - {key: cnpg.io/cluster, operator: Exists}
+      policyTypes: [Ingress, Egress]
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: cnpg-system
+          ports:
+            - {protocol: TCP, port: 8000}
+            - {protocol: TCP, port: 5432}
+      egress:
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: platform-s3
+          ports:
+            - {protocol: TCP, port: 3900}
+        - to:
+            - ipBlock:
+                cidr: 0.0.0.0/0
+          ports:
+            - {protocol: TCP, port: 6443}
+            - {protocol: TCP, port: 443}
+    <<- if has "https" $egress >>
+    ---
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: allow-egress-https
+      namespace: << $name >>
+    spec:
+      podSelector: {}
+      policyTypes: [Egress]
+      egress:
+        - to:
+            - ipBlock:
+                cidr: 0.0.0.0/0
+                except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10]
+          ports:
+            - {protocol: TCP, port: 443}
+    <<- end >>
+    <<- if has "smtp" $egress >>
+    ---
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: allow-egress-smtp
+      namespace: << $name >>
+    spec:
+      podSelector: {}
+      policyTypes: [Egress]
+      egress:
+        - to:
+            - ipBlock:
+                cidr: 0.0.0.0/0
+                except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10]
+          ports:
+            - {protocol: TCP, port: 587}
+            - {protocol: TCP, port: 465}
+    <<- end >>
+    ---
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: ghcr-auth
+      namespace: << $name >>
+      annotations:
+        fluxcd.controlplane.io/copyFrom: "flux-system/ghcr-auth"
+    type: kubernetes.io/dockerconfigjson
+    ---
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: platform-s3
+      namespace: << $name >>
+      annotations:
+        fluxcd.controlplane.io/copyFrom: "flux-system/platform-s3"
+    type: Opaque
+    ---
+    apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: << $name >>
+      namespace: flux-system
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: flux-deployer
+      namespace: << $name >>
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: platform-tenant-deployer
+    subjects:
+      - kind: ServiceAccount
+        name: << $name >>
+        namespace: flux-system
+    ---
+    apiVersion: source.toolkit.fluxcd.io/v1
+    kind: OCIRepository
+    metadata:
+      name: << $name >>
+      namespace: flux-system
+    spec:
+      interval: << if eq $tier "prod" >>10m<< else >>2m<< end >>
+      url: oci://ghcr.io/${GITHUB_ORG}/<< $repo >>-deploy
+      ref:
+        <<- if eq $tier "prod" >>
+        semver: << get inputs "prodSemver" | default ">=0.1.0" | quote >>
+        <<- else if eq $tier "staging" >>
+        tag: main
+        <<- else >>
+        tag: << printf "pr-%s" (toString inputs.id) >>
+        <<- end >>
+      secretRef:
+        name: ghcr-auth
+      <<- if eq "${OCI_VERIFY}" "true" >>
+      verify:
+        provider: cosign
+        matchOIDCIdentity:
+          - issuer: ^https://token\.actions\.githubusercontent\.com$
+            subject: ^https://github\.com/${GITHUB_ORG}/infra/\.github/workflows/app-ci\.ya?ml@refs/.+$
+      <<- end >>
+    ---
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: << $name >>
+      namespace: flux-system
+    spec:
+      serviceAccountName: << $name >>
+      targetNamespace: << $name >>
+      interval: 10m
+      retryInterval: 2m
+      timeout: 5m
+      wait: true
+      prune: true
+      sourceRef:
+        kind: OCIRepository
+        name: << $name >>
+      path: ./overlays/<< $tier >>
+      decryption:
+        provider: sops
+        secretRef:
+          name: sops-age
+      postBuild:
+        substitute:
+          APP_NAME: << $app | quote >>
+          APP_TIER: << $tier | quote >>
+          APP_NAMESPACE: << $name | quote >>
+          APP_HOST: << $host | quote >>
+          CLUSTER_ENV: "${CLUSTER_ENV}"
+          CLUSTER_DOMAIN: "${CLUSTER_DOMAIN}"
+          CLUSTER_ISSUER: "${CLUSTER_ISSUER}"
+          STORAGE_CLASS: << $storage | quote >>
+          S3_ENDPOINT: "${S3_ENDPOINT}"
+          S3_REGION: "${S3_REGION}"
+          S3_BUCKET_PG: "${S3_BUCKET_PG}"
+          S3_BUCKET_APPS: "${S3_BUCKET_APPS}"
+          OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.platform-otel.svc:4318"
+    <<- end >>
