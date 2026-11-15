@@ -15,7 +15,7 @@ Ce fichier est mis à jour à chaque étape. Une nouvelle session commence par l
 | 0. Inventaire | ✅ 2026-11-15 | outils figés dans `~/.local/bin` (`scripts/install-tools.sh`), make extrait du .deb Debian ; k3s passé en v1.35.10 par l'utilisateur |
 | 1. Architecture | ✅ validée le 2026-11-15 | `docs/architecture.md`, `docs/decisions/0001` à `0017` (révisées en phase 2 : 0002, 0006, 0010, 0011, 0015) |
 | 2. Base + surcouche locale | ✅ 2026-11-15 | `make test` vert : validation local (92 ressources kubeconform), 16 tests VAP, RBAC statique, Trivy, Gitleaks |
-| 3. Surcouche Hetzner + OpenTofu | à faire | |
+| 3. Surcouche Hetzner + OpenTofu | ✅ 2026-11-15 | `tofu validate` OK (local et hetzner), validation hetzner : 105 ressources kubeconform |
 | 4. app-template | à faire | |
 | 5. Pipelines + validation | à faire | |
 | 6. Runbooks + documentation | à faire | |
@@ -53,3 +53,17 @@ Ce fichier est mis à jour à chaque étape. Une nouvelle session commence par l
 - Notifications Flux vers GitHub (statut de commit, commentaire de PR) : phase 5.
 - NetworkPolicy des espaces de noms de la plateforme.
 - Test du masquage OTel : phase 5.
+
+## Phase 3 : ce qui est en place
+- `tofu/modules/flux-bootstrap` : module officiel `flux-operator-bootstrap` 0.10.0. Il crée les Secrets de départ (sops-age, github-app, ghcr-auth) et la ConfigMap runtime_info (CLUSTER_ENV, CLUSTER_NAME).
+- `tofu/envs/local` : amorçage seul sur le k3s existant, état local chiffré (pbkdf2 + aes_gcm, `enforced`).
+- `tofu/envs/hetzner` : kube-hetzner 3.2.1 (un nœud, Tailscale, etcd vers S3, SUC, Kured et cert-manager du module désactivés), 4 buckets avec `prevent_destroy`, backend S3 Hetzner, état chiffré.
+- `cluster/hetzner` : external-dns (Cloudflare, upsert-only), SUC v0.21.1 (Git amont + correction de l'image), Kured 1.23, opérateur Tailscale, OpenObserve sur S3, ClusterIssuers Let's Encrypt (DNS-01), Plan k3s figé, copie quotidienne vers R2 avec rclone.
+- Secrets Hetzner : valeurs factices `A-REMPLACER`, chiffrées pour l'instant avec la clé LOCALE (`scripts/gen-hetzner-placeholders.sh`).
+
+## Phase 3 : écrit mais non vérifié
+- `tofu plan` et `tofu apply` (jamais lancés : il faudrait les identifiants Hetzner).
+- kube-hetzner : 80/443 restent toujours ouverts à tout Internet (code du module vérifié). Le filtrage Cloudflare côté Traefik reste à décider (ADR-0011).
+- Sentinelle de redémarrage de Kured sur Leap Micro (`/var/run/reboot-required`).
+- `ZO_S3_*` d'OpenObserve vers Hetzner Object Storage.
+- Le Public Access Block de Hetzner Object Storage (exception Trivy, à vérifier à la main).

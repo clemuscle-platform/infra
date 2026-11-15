@@ -1,0 +1,11 @@
+# Règles Gitleaks par défaut + exclusion des seuls dossiers générés (jamais versionnés).
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Dossiers générés : modules et fournisseurs OpenTofu téléchargés, sorties de validation"
+paths = [
+  '''(^|/)\.terraform/''',
+  '''(^|/)out/''',
+  '''(^|/)\.cache/''',
+]

@@ -5,7 +5,7 @@ SHELL := /usr/bin/env bash
 ENV ?= local
 ENVS := local hetzner
 
-.PHONY: help tools test build deploy logs validate test-policies test-rbac test-rbac-live \
+.PHONY: help tools test build deploy logs validate validate-tofu test-policies test-rbac test-rbac-live \
         test-redaction scan fmt plan secrets-local agent-kubeconfig clean
 
 help: ## Affiche cette aide
@@ -14,13 +14,13 @@ help: ## Affiche cette aide
 tools: ## Installe les outils figés dans ~/.local/bin
 	scripts/install-tools.sh
 
-test: validate test-policies test-rbac scan ## Tous les contrôles hors cluster (comme la CI)
+test: validate validate-tofu test-policies test-rbac scan ## Tous les contrôles hors cluster (comme la CI)
 
 build: ## Rend les manifestes de ENV dans out/ENV (sans rien appliquer)
 	scripts/validate.sh $(ENV)
 
 validate: ## kustomize/flux build + kubeconform pour chaque environnement présent
-	@for e in $(ENVS); do [[ -f cluster/$$e/runtime-info.yaml ]] && scripts/validate.sh $$e || true; done
+	@for e in $(ENVS); do if [[ -f cluster/$$e/runtime-info.yaml ]]; then scripts/validate.sh $$e; fi; done
 
 test-policies: ## Tests des ValidatingAdmissionPolicy (CLI kyverno)
 	scripts/test-policies.sh $(ENV)
@@ -33,9 +33,13 @@ test-rbac-live: ## Contrôle du rôle agent-reader sur le cluster courant (kubec
 
 scan: ## Trivy (configuration) + Gitleaks
 	trivy config --quiet --severity HIGH,CRITICAL --exit-code 1 --ignorefile .trivyignore.yaml \
-	  --skip-dirs out --skip-dirs .cache --skip-dirs cluster/base/policies/tests .
+	  --skip-dirs out --skip-dirs .cache --skip-dirs cluster/base/policies/tests \
+	  --skip-dirs "tofu/envs/*/.terraform" .
 	gitleaks dir . --no-banner --redact
 	gitleaks git . --no-banner --redact
+
+validate-tofu: ## tofu fmt -check + tofu validate (sans backend)
+	scripts/validate-tofu.sh
 
 fmt: ## Formate le code OpenTofu
 	tofu fmt -recursive tofu

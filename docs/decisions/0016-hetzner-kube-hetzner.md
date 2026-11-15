@@ -12,11 +12,11 @@
   | `ingress_controller` | `traefik` | ADR-0004 |
   | `enable_cert_manager` | `false` | installé par Flux |
   | `enable_system_upgrade_controller` | `false` | installé par Flux (ADR-0013) |
-  | Kured (option de désactivation) | `false` | installé par Flux |
+  | `enable_kured` | `false` | installé par Flux |
   | `automatically_upgrade_kubernetes` | `false` | versions figées dans Git |
   | `node_transport_mode` | `tailscale` | ADR-0012 |
-  | `firewall_ssh_source`, `firewall_kube_api_source` | `[]` | fermés en public |
-  | `extra_firewall_rules` | 80/443 depuis les IP Cloudflare | ADR-0011 |
+  | `firewall_ssh_source`, `firewall_kube_api_source` | `null` (règle supprimée) | fermés en public, accès par Tailscale |
+  | `traefik_merge_values` | `forwardedHeaders.trustedIPs` = IP Cloudflare, redirection HTTPS | ADR-0011 (80/443 restent ouverts à tous : non configurable dans le module) |
   | `etcd_s3_backup` | bucket `-etcd` | ADR-0013 |
   | `enable_secrets_encryption` | `true` | Secrets chiffrés au repos |
   | `create_kubeconfig` | `false` | kubeconfig en sortie sensible, pas sur disque |

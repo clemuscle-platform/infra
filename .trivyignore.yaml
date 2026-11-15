@@ -14,3 +14,21 @@ misconfigurations:
   - id: KSV-0118
     paths: ["cluster/base/policies/tests/**"]
     statement: Données de test (cas refusés exprès).
+  # Hetzner Object Storage (compatible S3, pas AWS) : pas de KMS ; buckets privés par défaut et
+  # « Public Access Block » non garanti par l'API Hetzner. Vérification manuelle dans le runbook
+  # migration-hetzner (étape « buckets privés »). À réévaluer si Hetzner prend en charge ces API.
+  - id: AWS-0132
+    paths: ["tofu/envs/hetzner/buckets.tf"]
+    statement: Pas de KMS chez Hetzner Object Storage.
+  - id: AWS-0086
+    paths: ["tofu/envs/hetzner/buckets.tf"]
+    statement: Buckets privés par défaut chez Hetzner ; API Public Access Block non garantie.
+  - id: AWS-0087
+    paths: ["tofu/envs/hetzner/buckets.tf"]
+    statement: Idem AWS-0086.
+  - id: AWS-0091
+    paths: ["tofu/envs/hetzner/buckets.tf"]
+    statement: Idem AWS-0086.
+  - id: AWS-0093
+    paths: ["tofu/envs/hetzner/buckets.tf"]
+    statement: Idem AWS-0086.
