@@ -117,7 +117,7 @@ Flux applique les dossiers dans un ordre explicite, avec des `dependsOn` entre s
 Le principe est détaillé dans l'[ADR-0002](decisions/0002-livraison-applications-oci.md).
 
 1. **Création** : un agent crée un dépôt depuis `app-template`, puis ouvre une PR sur `infra` qui ajoute `cluster/apps/<app>.yaml`. Cette déclaration réserve les espaces de noms, les quotas et les modules activés. Un humain valide l'arrivée d'une nouvelle application.
-2. **Pull request sur l'application** : la CI lance les tests et les scans, puis construit l'image `ghcr.io/<org>/<app>:<sha>`. Elle publie aussi `deploy/` comme artefact OCI signé, avec le tag `pr-<n>`. Flux Operator détecte la PR grâce au label `preview` (`ResourceSetInputProvider` de type `GitHubPullRequest`) et crée `app-<app>-pr-<n>` sur `<app>-pr-<n>.<domaine>`. L'URL est commentée sur la PR. L'environnement est supprimé à la fermeture de la PR.
+2. **Pull request sur l'application** : la CI lance les tests et les scans, puis construit l'image `ghcr.io/<org>/<app>:<sha>`. Elle publie aussi `deploy/` comme artefact OCI signé, avec le tag `pr-<n>`. Flux Operator détecte la PR grâce au label `preview` (`ResourceSetInputProvider` de type `GitHubPullRequest`) et crée `app-<app>-pr-<n>` sur `<app>-pr-<n>.<domaine>`. L'URL est commentée sur la PR par la CI. L'environnement est supprimé à la fermeture de la PR.
 3. **Fusion sur `main`** : la CI publie l'artefact avec le tag `main`, et Flux déploie `app-<app>-staging`. La fusion est automatique quand les contrôles passent.
 4. **Production** : une étiquette Git `vX.Y.Z` publie l'artefact avec ce tag. Le niveau production suit la plage semver `>=1.0.0` (ou `>=0.1.0`). Un agent peut poser l'étiquette si les objectifs de service du staging sont respectés depuis 24 h. Un retour arrière se fait en publiant une nouvelle étiquette depuis le commit précédent.
 
@@ -128,10 +128,11 @@ L'image est construite avant que l'artefact ne la référence : Flux ne voit don
 Voir l'[ADR-0006](decisions/0006-isolation-applications.md).
 
 - Il y a **un espace de noms par application et par niveau** : `app-<nom>-prod`, `app-<nom>-staging` et `app-<nom>-pr-<n>`. Chacun porte le label `platform.io/app=<nom>`.
-- La **NetworkPolicy** refuse tout par défaut. Elle autorise trois flux : l'entrée depuis Traefik, l'export vers le collecteur OTel et le DNS. La sortie vers Internet n'est ouverte que sur demande, déclarée dans `cluster/apps/`. Le contrôleur de NetworkPolicy intégré à k3s applique ces règles.
+- La **NetworkPolicy** refuse tout par défaut. Elle autorise trois flux : l'entrée depuis Traefik, l'export vers le collecteur OTel (`platform-otel`) et le DNS. PostgreSQL peut en plus joindre l'API et le S3. La sortie vers Internet n'est ouverte que sur demande, déclarée dans `cluster/apps/`. Le contrôleur de NetworkPolicy intégré à k3s applique ces règles.
 - **ResourceQuota et LimitRange** sont posés par niveau. Les préversions ont un quota réduit, et le nombre de préversions simultanées est plafonné.
 - La **Pod Security Admission** est en `restricted` sur tous les espaces de noms d'applications : pas de root, pas d'escalade de privilèges, seccomp, capacités retirées. Des **ValidatingAdmissionPolicy** ajoutent d'autres exigences : images venant de `ghcr.io/<org>/` uniquement, requests et limits obligatoires, pas de tag `latest`, pas de `hostPath`, labels exigés, et pas de Service `LoadBalancer` ou `NodePort` dans les espaces de noms d'applications.
-- Chaque application déploie sous son propre ServiceAccount Flux, limité à ses espaces de noms (`serviceAccountName` sur les Kustomizations). Une application ne peut donc pas écrire ailleurs, même avec un manifeste malveillant.
+- Chaque niveau d'application est déployé sous son propre ServiceAccount (`flux-system/app-<nom>-<niveau>`), lié au rôle `platform-tenant-deployer` dans son seul namespace. Ce rôle ne peut ni modifier les NetworkPolicy, ni les quotas, ni le RBAC. Une application ne peut donc pas écrire ailleurs, ni défaire son isolation, même avec un manifeste malveillant.
+- Les règles d'admission ne visent que les requêtes de ces comptes (`matchConditions`). Seule `platform-protect-prod-data` s'applique à tout le monde.
 
 ## 8. Accès des agents
 

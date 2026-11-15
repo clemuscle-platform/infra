@@ -18,7 +18,7 @@ Chaque application a un dossier `deploy/` décrivant trois niveaux : préversion
   | PR avec le label `preview` | `pr-<n>` | préversion | `app-<app>-pr-<n>` |
   | push sur `main` | `main` | staging | `app-<app>-staging` |
   | étiquette `vX.Y.Z` | `X.Y.Z` | production | `app-<app>-prod` |
-- Côté cluster, `cluster/apps/<app>.yaml` est un **ResourceSet** qui crée, pour chaque niveau, une `OCIRepository` (avec `verify.provider: cosign` et l'identité de workflow attendue) et une `Kustomization` qui applique `deploy/overlays/<niveau>`. La production suit `semver: ">=0.1.0"`.
+- Côté cluster, `cluster/apps/<app>.yaml` contient deux `ResourceSetInputProvider` : la déclaration (`Static`) et les préversions (`GitHubPullRequest`). Le ResourceSet commun `app-tenants` crée, pour chaque niveau, une `OCIRepository` (avec `verify.provider: cosign` et l'identité du workflow réutilisable `infra/.github/workflows/app-ci.yml`) et une `Kustomization` qui applique `deploy/overlays/<niveau>` (`preview`, `staging`, `prod`). La production suit `semver: ">=0.1.0"`.
 - Les préversions sont générées par un `ResourceSetInputProvider` de type `GitHubPullRequest`, filtré sur le label `preview`, qui crée et supprime les espaces de noms `pr-<n>`. Le nombre de préversions simultanées est plafonné (`filter.limit`).
 - Le statut du déploiement est renvoyé sur le commit GitHub par un `Provider` de notification `github`. L'URL de la préversion est commentée sur la PR (`githubpullrequestcomment`).
 

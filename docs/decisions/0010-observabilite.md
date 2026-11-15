@@ -3,7 +3,7 @@
 **Statut** : proposée · 2026-11-15
 
 ## Décision
-- **OpenTelemetry Collector** (distribution `otelcol-contrib` 0.165), déployé par le chart officiel en DaemonSet, dans `platform-observability`. Récepteurs :
+- **OpenTelemetry Collector** (distribution `otelcol-contrib` 0.165), déployé par le chart officiel en DaemonSet, dans **`platform-otel`** (PSA `privileged`, car il lit `/var/log/pods` par hostPath). OpenObserve reste dans `platform-observability` (PSA `restricted`). Récepteurs :
   - `otlp` (gRPC et HTTP) pour les applications ;
   - `filelog` pour les journaux des conteneurs ;
   - `kubeletstats` pour les métriques des pods et des nœuds ;

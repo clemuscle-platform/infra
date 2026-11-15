@@ -8,7 +8,8 @@
 - Contrôles de la CI `infra` : `tofu fmt -check`, `tofu validate`, `kustomize build` par surcouche, `kubeconform` (avec les schémas des CRD), `flux build` / `flux-operator build`, `kyverno test` (VAP), test du masquage OTel, `trivy config`, `gitleaks`, garde-fous (base sans valeur d'environnement, Secrets chiffrés, `tofu-destroy-guard`).
 - Contrôles de la CI d'application : tests, lint, `semgrep` (règles `p/default` + règles maison), `gitleaks`, `trivy fs` puis `trivy image` (échec sur HIGH/CRITICAL corrigeables), construction multi-architecture, SBOM, signature cosign, `migration-guard`.
 - Toutes les actions sont figées par SHA. `permissions:` est minimal par job, avec `contents: read` par défaut.
-- Les jetons proviennent de GitHub Apps (`actions/create-github-app-token`), jamais de PAT. GHCR utilise `GITHUB_TOKEN` (`packages: write`).
+- Les jetons proviennent de GitHub Apps (`actions/create-github-app-token`), jamais de PAT. GHCR utilise `GITHUB_TOKEN` (`packages: write`) dans la CI.
+- **Exception documentée (phase 2)** : GHCR n'accepte pas les jetons d'installation de GitHub App. Pour que le cluster **lise** les images et les artefacts privés (Secret `ghcr-auth`), il faut un **PAT classique** limité à `read:packages`, créé sur un compte machine ou sur le compte de l'utilisateur, avec une expiration de 90 jours et une rotation consignée dans `docs/secrets-de-depart.md`. Ce jeton ne donne aucun droit en écriture.
 
 ## Réglages GitHub recommandés
 Ils sont détaillés dans `docs/reglages-github.md` : règles de branche (rulesets) au niveau de l'organisation, contrôles requis, signatures exigées, interdiction des force-push, CODEOWNERS, environnements `production` et `hetzner` avec relecteurs requis pour `tofu apply`, rotation des clés des GitHub Apps tous les 90 jours.

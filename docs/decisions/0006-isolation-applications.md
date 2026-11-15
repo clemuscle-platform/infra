@@ -4,12 +4,13 @@
 
 ## Décision
 - Les espaces de noms sont `app-<nom>-prod`, `app-<nom>-staging` et `app-<nom>-pr-<n>`. Chacun porte les labels `platform.io/managed=true`, `platform.io/app=<nom>`, `platform.io/tier=<prod|staging|preview>` et `pod-security.kubernetes.io/enforce=restricted`.
-- Un composant Kustomize, `cluster/base/tenants/component`, génère pour chaque espace de noms :
+- Le ResourceSet `app-tenants` génère pour chaque espace de noms :
   - `NetworkPolicy default-deny` (entrée et sortie) ;
   - les autorisations : DNS vers kube-dns, entrée depuis l'espace de noms de Traefik, sortie vers l'OTel Collector, et trafic interne à l'espace de noms (application ↔ sa base) ;
   - la sortie vers Internet, seulement si l'application la déclare (`egress: [smtp, https]` dans `cluster/apps/<app>.yaml`). Elle exclut toujours les plages privées et l'IP de métadonnées `169.254.169.254` ;
   - `ResourceQuota` et `LimitRange` selon le niveau ;
-  - un `ServiceAccount` `flux-deployer` et un `RoleBinding` vers `admin` sur cet espace de noms uniquement. Les Kustomizations de l'application tournent sous ce compte.
+  - un `ServiceAccount` `flux-system/<namespace>` et un `RoleBinding` dans le namespace de l'application vers le ClusterRole **`platform-tenant-deployer`**. Ce rôle est plus restreint que `admin` : pas de NetworkPolicy, de quota, de Role ni de RoleBinding. Les `OCIRepository` et `Kustomization` de l'application vivent dans `flux-system`, et tournent sous ce compte (`serviceAccountName`, `targetNamespace`). La clé `sops-age` reste ainsi dans `flux-system`, hors de portée des applications.
+  - Implémentation : un seul `ResourceSet`, `cluster/base/tenants/app-tenants.yaml`, alimenté par les déclarations de `cluster/apps/` (révision de la phase 2 : il remplace le composant Kustomize « tenant » prévu au départ).
 - Quotas par défaut, modifiables par application :
   | Niveau | requests.memory | limits.memory | requests.cpu | PVC |
   |---|---|---|---|---|
