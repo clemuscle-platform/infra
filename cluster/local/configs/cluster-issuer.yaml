@@ -1,0 +1,34 @@
+# Certificats locaux : CA auto-signée générée par cert-manager (ADR-0011).
+# Pour faire confiance à la CA dans le navigateur :
+#   kubectl get secret -n cert-manager platform-local-ca -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-bootstrap
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: platform-local-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: platform-local-ca
+  secretName: platform-local-ca
+  duration: 87600h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    kind: ClusterIssuer
+    name: selfsigned-bootstrap
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-ca
+spec:
+  ca:
+    secretName: platform-local-ca

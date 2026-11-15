@@ -1,0 +1,191 @@
+# Garage : S3 local, nœud unique (ADR-0008). Surcouche « local » uniquement.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform-s3
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: garage-config
+  namespace: platform-s3
+data:
+  garage.toml: |
+    metadata_dir = "/var/lib/garage/meta"
+    data_dir = "/var/lib/garage/data"
+    db_engine = "lmdb"
+    replication_factor = 1
+    rpc_bind_addr = "[::]:3901"
+    rpc_public_addr = "127.0.0.1:3901"
+    # Identifiants RPC et admin : fournis par variables d'environnement (Secret SOPS garage-secrets).
+
+    [s3_api]
+    s3_region = "garage"
+    api_bind_addr = "[::]:3900"
+    root_domain = ".s3.garage.localhost"
+
+    [admin]
+    api_bind_addr = "[::]:3903"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: garage
+  namespace: platform-s3
+  labels:
+    app.kubernetes.io/name: garage
+spec:
+  selector:
+    app.kubernetes.io/name: garage
+  ports:
+    - {name: s3, port: 3900, targetPort: 3900}
+    - {name: admin, port: 3903, targetPort: 3903}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: garage
+  namespace: platform-s3
+  labels:
+    app.kubernetes.io/name: garage
+spec:
+  serviceName: garage
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: garage
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: garage
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: garage
+          image: dxflrs/garage:v2.5.0
+          args: ["/garage", "-c", "/etc/garage/garage.toml", "server"]
+          envFrom:
+            - secretRef:
+                name: garage-secrets
+          ports:
+            - {name: s3, containerPort: 3900}
+            - {name: rpc, containerPort: 3901}
+            - {name: admin, containerPort: 3903}
+          readinessProbe:
+            tcpSocket:
+              port: 3900
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 20m, memory: 64Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - {name: config, mountPath: /etc/garage}
+            - {name: meta, mountPath: /var/lib/garage/meta}
+            - {name: data, mountPath: /var/lib/garage/data}
+      volumes:
+        - name: config
+          configMap:
+            name: garage-config
+  volumeClaimTemplates:
+    - metadata:
+        name: meta
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: ${STORAGE_CLASS}
+        resources:
+          requests:
+            storage: 1Gi
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: ${STORAGE_CLASS}
+        resources:
+          requests:
+            storage: 20Gi
+---
+# Initialisation idempotente via l'API d'administration v2 (l'image Garage n'a pas de shell) :
+# disposition du nœud, import de la clé d'accès de la plateforme, buckets et droits.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: garage-init
+  namespace: platform-s3
+  annotations:
+    # Job immuable : Flux le recrée quand ce manifeste change.
+    kustomize.toolkit.fluxcd.io/force: enabled
+spec:
+  backoffLimit: 10
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: init
+          image: curlimages/curl:8.23.0
+          envFrom:
+            - secretRef:
+                name: garage-secrets
+          env:
+            - {name: BUCKETS, value: "platform-pg platform-apps"}
+            - {name: CAPACITY, value: "20000000000"}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              A=http://garage.platform-s3.svc.cluster.local:3903
+              H="Authorization: Bearer $GARAGE_ADMIN_TOKEN"
+              J="Content-Type: application/json"
+              until curl -fsS -H "$H" "$A/v2/GetClusterHealth" >/dev/null 2>&1; do echo "attente de Garage"; sleep 3; done
+              status=$(curl -fsS -H "$H" "$A/v2/GetClusterStatus")
+              node=$(echo "$status" | grep -o '"id":"[0-9a-f]\{64\}"' | head -1 | cut -d'"' -f4)
+              ver=$(echo "$status" | grep -o '"layoutVersion":[0-9]*' | cut -d: -f2)
+              if [ "$ver" = "0" ]; then
+                echo "disposition initiale du nœud $node"
+                curl -fsS -H "$H" -H "$J" -X POST "$A/v2/UpdateClusterLayout" \
+                  -d "{\"roles\":[{\"id\":\"$node\",\"zone\":\"local\",\"capacity\":$CAPACITY,\"tags\":[]}]}" >/dev/null
+                curl -fsS -H "$H" -H "$J" -X POST "$A/v2/ApplyClusterLayout" -d '{"version":1}' >/dev/null
+              fi
+              if ! curl -fsS -H "$H" "$A/v2/GetKeyInfo?id=$AWS_ACCESS_KEY_ID" >/dev/null 2>&1; then
+                echo "import de la clé de la plateforme"
+                curl -fsS -H "$H" -H "$J" -X POST "$A/v2/ImportKey" \
+                  -d "{\"accessKeyId\":\"$AWS_ACCESS_KEY_ID\",\"secretAccessKey\":\"$AWS_SECRET_ACCESS_KEY\",\"name\":\"platform\"}" >/dev/null
+              fi
+              for b in $BUCKETS; do
+                if ! info=$(curl -fsS -H "$H" "$A/v2/GetBucketInfo?globalAlias=$b" 2>/dev/null); then
+                  echo "création du bucket $b"
+                  info=$(curl -fsS -H "$H" -H "$J" -X POST "$A/v2/CreateBucket" -d "{\"globalAlias\":\"$b\"}")
+                fi
+                id=$(echo "$info" | grep -o '"id":"[0-9a-f]\{64\}"' | head -1 | cut -d'"' -f4)
+                curl -fsS -H "$H" -H "$J" -X POST "$A/v2/AllowBucketKey" \
+                  -d "{\"bucketId\":\"$id\",\"accessKeyId\":\"$AWS_ACCESS_KEY_ID\",\"permissions\":{\"read\":true,\"write\":true,\"owner\":true}}" >/dev/null
+              done
+              echo "Garage initialisé"
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 64Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

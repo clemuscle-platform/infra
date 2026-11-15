@@ -1,0 +1,10 @@
+# Couche « controllers » de l'environnement local : base + Garage (S3 local).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base/controllers/cert-manager
+  - ../../base/controllers/cnpg
+  - ../../base/controllers/observability
+  - garage
+  - secrets/openobserve-root.sops.yaml
+  - secrets/openobserve-ingest.sops.yaml

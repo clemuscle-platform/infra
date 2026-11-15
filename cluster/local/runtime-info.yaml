@@ -1,0 +1,28 @@
+# Variables de l'environnement « local » (k3s du PC, WSL2).
+# Toute valeur qui diffère entre environnements est ici, jamais dans cluster/base (ADR-0003).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flux-runtime-info
+  namespace: flux-system
+  labels:
+    toolkit.fluxcd.io/runtime: "true"
+    reconcile.fluxcd.io/watch: Enabled
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: "Merge"
+data:
+  CLUSTER_ENV: local
+  CLUSTER_NAME: local-wsl
+  CLUSTER_DOMAIN: localhost
+  CLUSTER_ISSUER: selfsigned-ca
+  GITHUB_ORG: clemuscle-platform
+  INGRESS_NAMESPACE: kube-system
+  STORAGE_CLASS: local-path
+  PREVIEW_STORAGE_CLASS: local-path
+  PREVIEW_MAX: "5"
+  # Signature cosign vérifiée : désactivable en local pour les artefacts « dev-* » poussés à la main.
+  OCI_VERIFY: "true"
+  S3_ENDPOINT: http://garage.platform-s3.svc.cluster.local:3900
+  S3_REGION: garage
+  S3_BUCKET_PG: platform-pg
+  S3_BUCKET_APPS: platform-apps
