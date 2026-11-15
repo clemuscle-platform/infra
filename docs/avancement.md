@@ -16,8 +16,8 @@ Ce fichier est mis à jour à chaque étape. Une nouvelle session commence par l
 | 1. Architecture | ✅ validée le 2026-11-15 | `docs/architecture.md`, `docs/decisions/0001` à `0017` (révisées en phase 2 : 0002, 0006, 0010, 0011, 0015) |
 | 2. Base + surcouche locale | ✅ 2026-11-15 | `make test` vert : validation local (92 ressources kubeconform), 16 tests VAP, RBAC statique, Trivy, Gitleaks |
 | 3. Surcouche Hetzner + OpenTofu | ✅ 2026-11-15 | `tofu validate` OK (local et hetzner), validation hetzner : 105 ressources kubeconform |
-| 4. app-template | à faire | |
-| 5. Pipelines + validation | à faire | |
+| 4. app-template | ✅ 2026-11-15 | `make test` vert dans app-template ; images construites en local, 0 CVE HIGH/CRITICAL corrigeable |
+| 5. Pipelines + validation | ⏸ commencée (arrêt volontaire, quota) | voir « Reprise » ci-dessous |
 | 6. Runbooks + documentation | à faire | |
 
 ## État du k3s local (2026-11-15)
@@ -67,3 +67,22 @@ Ce fichier est mis à jour à chaque étape. Une nouvelle session commence par l
 - Sentinelle de redémarrage de Kured sur Leap Micro (`/var/run/reboot-required`).
 - `ZO_S3_*` d'OpenObserve vers Hetzner Object Storage.
 - Le Public Access Block de Hetzner Object Storage (exception Trivy, à vérifier à la main).
+
+## Reprise (arrêt du 2026-11-15, phase 5 commencée)
+**Bug trouvé, à corriger en premier** : `cluster/base/controllers/observability/otel-values.yaml` n'est **pas un YAML valide** (ligne 78, colonne 79 : « mapping values are not allowed here »). Les instructions OTTL non quotées contiennent `: `. Il faut mettre chaque instruction de `log_statements` et `trace_statements` entre quotes simples, en doublant les `'` internes. `make test` ne le détectait pas, parce que le fichier passe par un configMapGenerator sans être analysé. Il faut ajouter une analyse YAML de ce fichier à `scripts/validate.sh`.
+
+Fait en phase 5 (non commité au moment de l'arrêt, puis commité en « WIP ») :
+- `scripts/install-tools.sh` : actionlint 1.7.12 et cosign 3.1.4 ajoutés.
+- `scripts/test-redaction.sh` et `tests/redaction/{input.jsonl,check.py}` : test du masquage avec le vrai collecteur (docker, image otel/opentelemetry-collector-contrib:0.163.2). Jamais passé avec succès, à cause du bug YAML ci-dessus. Ajouter `tests/redaction/` à l'allowlist de `.gitleaks.toml` si Gitleaks signale les faux jetons.
+
+SHA des actions relevés (à figer dans les workflows) :
+actions/checkout v7.0.1 3d3c42e5aac5ba805825da76410c181273ba90b1 · astral-sh/setup-uv v10.3.3 68559e99cc807c1eb7e9238fd43a15bba460eec2 · docker/setup-buildx-action v4.4.1 f87e5991a6d7451dcb8d9637bfbc97413f497069 · docker/setup-qemu-action v4.4.0 99012661954931238ded8c8b007157a8430204e1 · docker/login-action v4.8.0 8aa5831fb8d48d8f76594c7ddde61ae58019f550 · sigstore/cosign-installer v4.1.3 756fe2d284c7292c4e9b62c8a28f1e5629c59532 · actions/create-github-app-token v3.3.0 64ab729a6294000f5aa4a4bc0b73d1f32bc45510 · actions/github-script v9.0.0 3a2844b7e9c422d3c10d287c895573f7108da1b3 · renovatebot/github-action v46.3.13 266fef21329c44765ad42f9dea1f01f5d2d91084
+
+Reste à faire en phase 5 :
+1. Workflows `infra` : `validate.yml` (make test + test-redaction + actionlint), `tofu-plan.yml` (garde-fou des destructions → environnement `hetzner-destroy`), `k3s-minor-guard`, `renovate.yml` + `renovate.json` (commentaires `# renovate:` dans install-tools.sh), `weekly-maintenance.yml`.
+2. Workflows réutilisables `app-ci.yml` (tests, scans, migration-guard → environnement `destructive-migration`, build multi-arch, publish.sh SIGN=true, trivy image, commentaire de l'URL de préversion), et `app-template/.github/workflows/ci.yml` qui les appelle.
+3. alert-bridge (Go, image, manifestes) ; slo-sync (écrit plus tard, ou doc de création manuelle des alertes).
+4. Notifications Flux vers GitHub (statuts de commit).
+Puis phase 6 : runbooks, secrets-de-depart.md, reglages-github.md, CLAUDE.md d'infra, rapport final.
+
+Note sur l'environnement : `tofu validate`, docker et kubectl doivent tourner hors du bac à sable de Claude Code (sockets locales).

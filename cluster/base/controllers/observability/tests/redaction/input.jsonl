@@ -1,0 +1,15 @@
+{"msg": "connexion de alice.martin@example.org depuis le formulaire", "case": "email-body"}
+{"msg": "jeton utilisé : ghp_FAUXFAUXFAUXFAUXFAUXFAUXFAUXFAUXFAUX12", "case": "github-token-body"}
+{"msg": "pat github_pat_FAUX0FAUX0FAUX0FAUX0FAUX0FAUX0FAUX0", "case": "github-pat-body"}
+{"msg": "clé AKIAFAUXFAUXFAUX1234 refusée", "case": "aws-key-body"}
+{"msg": "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmYXV4In0.ZmF1eHNpZ25hdHVyZQ", "case": "bearer-jwt-body"}
+{"msg": "dsn=postgres://app:MotDePasseFaux@db:5432/app", "case": "dsn-body"}
+{"msg": "config password=MotDePasseFaux2 timeout=3", "case": "password-kv-body"}
+{"msg": "paiement carte 4111 1111 1111 1111 accepté", "case": "card-body"}
+{"msg": "virement vers FR76 3000 6000 0112 3456 7890 189", "case": "iban-body"}
+{"msg": "rappeler le 06 12 34 56 78", "case": "phone-body"}
+{"msg": "-----BEGIN PRIVATE KEY-----\nMIIFAUXFAUXFAUX\n-----END PRIVATE KEY-----", "case": "private-key-body"}
+{"msg": "requête traitée en 12 ms, horodatage 1763241600000", "case": "harmless-body"}
+{"msg": "attribut sensible", "case": "email-attribute", "user.email": "bob@example.org"}
+{"msg": "attribut sensible", "case": "token-key-attribute", "api_token": "valeur-quelconque"}
+{"msg": "attribut sensible", "case": "header-attribute", "http.request.header.authorization": "Basic ZmF1eDpmYXV4"}

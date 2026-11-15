@@ -18,6 +18,8 @@ TOFU=1.13.9
 TRIVY=0.76.2
 UV=0.13.8
 SEMGREP=1.185.0
+ACTIONLINT=1.7.12
+COSIGN=3.1.4
 
 # fetch <url> <sums-url> <asset-name>
 fetch() {
@@ -76,5 +78,13 @@ echo "$(awk '{print $1}' "$WORK/$a.sha256")  $WORK/$a" | sha256sum -c --quiet
 untar $a uv-x86_64-unknown-linux-gnu/uv uv
 
 "$BIN/uv" tool install --force "semgrep==$SEMGREP"
+
+a=actionlint_${ACTIONLINT}_linux_amd64.tar.gz
+fetch $GH/rhysd/actionlint/releases/download/v$ACTIONLINT/$a $GH/rhysd/actionlint/releases/download/v$ACTIONLINT/actionlint_${ACTIONLINT}_checksums.txt $a
+untar $a actionlint actionlint
+
+a=cosign-linux-amd64
+fetch $GH/sigstore/cosign/releases/download/v$COSIGN/$a $GH/sigstore/cosign/releases/download/v$COSIGN/cosign_checksums.txt $a
+install -m 0755 "$WORK/$a" "$BIN/cosign"
 
 echo "OK"
