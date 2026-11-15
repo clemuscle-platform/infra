@@ -1,0 +1,48 @@
+# Lancé par scripts/test-policies.sh, qui rend d'abord les règles (variables Flux) dans .rendered/.
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: platform-app-policies
+policies:
+  - .rendered/app-policies.yaml
+resources:
+  - resources.yaml
+userinfo: user-info.yaml
+variables: values.yaml
+results:
+  - policy: platform-workload-images
+    kind: Deployment
+    resources: [app-hello-staging/ok-staging, app-hello-prod/ok-prod-digest, app-hello-staging/ko-no-resources, app-hello-staging/ko-wrong-app-label]
+    result: pass
+  - policy: platform-workload-images
+    kind: Deployment
+    resources: [app-hello-prod/ko-prod-tag-only, app-hello-staging/ko-registry, app-hello-staging/ko-latest]
+    result: fail
+  - policy: platform-workload-shape
+    kind: Deployment
+    resources: [app-hello-staging/ok-staging, app-hello-prod/ok-prod-digest]
+    result: pass
+  - policy: platform-workload-shape
+    kind: Deployment
+    resources: [app-hello-staging/ko-no-resources, app-hello-staging/ko-wrong-app-label]
+    result: fail
+  - policy: platform-workload-shape
+    kind: CronJob
+    resources: [app-hello-staging/ko-cron-token]
+    result: fail
+  - policy: platform-services
+    kind: Service
+    resources: [app-hello-staging/ok-clusterip]
+    result: pass
+  - policy: platform-services
+    kind: Service
+    resources: [app-hello-staging/ko-loadbalancer]
+    result: fail
+  - policy: platform-ingress-hosts
+    kind: Ingress
+    resources: [app-hello-staging/ok-ingress]
+    result: pass
+  - policy: platform-ingress-hosts
+    kind: Ingress
+    resources: [app-hello-staging/ko-ingress-other-app]
+    result: fail

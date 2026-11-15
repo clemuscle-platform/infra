@@ -1,0 +1,31 @@
+# Cas CNPG : la CLI kyverno ne résout pas les CRD hors cluster ; non exécutés en CI (voir README).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: ok-pg
+  namespace: app-hello-staging
+spec:
+  instances: 1
+  storage:
+    size: 1Gi
+  resources:
+    requests:
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: ko-pg-image
+  namespace: app-hello-staging
+spec:
+  instances: 1
+  imageName: docker.io/library/postgres:18
+  storage:
+    size: 1Gi
+  resources:
+    requests:
+      memory: 128Mi
+    limits:
+      memory: 256Mi

@@ -1,0 +1,85 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: platform-workload-images
+spec:
+  policyName: platform-workload-images
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        platform.io/managed: "true"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: platform-workload-shape
+spec:
+  policyName: platform-workload-shape
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        platform.io/managed: "true"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: platform-services
+spec:
+  policyName: platform-services
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        platform.io/managed: "true"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: platform-ingress-hosts
+spec:
+  policyName: platform-ingress-hosts
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        platform.io/managed: "true"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: platform-postgres
+spec:
+  policyName: platform-postgres
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        platform.io/managed: "true"
+---
+# Objets namespacés (Cluster CNPG, PVC) dans un namespace de production.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: platform-protect-prod-data
+spec:
+  policyName: platform-protect-prod-data
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        platform.io/tier: prod
+---
+# Le namespace de production lui-même (objectSelector évalué sur l'objet supprimé).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: platform-protect-prod-namespaces
+spec:
+  policyName: platform-protect-prod-data
+  validationActions: [Deny]
+  matchResources:
+    objectSelector:
+      matchLabels:
+        platform.io/tier: prod

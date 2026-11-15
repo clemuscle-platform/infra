@@ -1,0 +1,7 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: UserInfo
+metadata:
+  name: tenant-deployer
+userInfo:
+  username: system:serviceaccount:flux-system:app-hello-staging
+  groups: ["system:serviceaccounts", "system:serviceaccounts:flux-system", "system:authenticated"]

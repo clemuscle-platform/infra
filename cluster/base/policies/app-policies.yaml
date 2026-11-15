@@ -1,0 +1,194 @@
+# Règles d'admission des applications (ADR-0005). ValidatingAdmissionPolicy natif, sans webhook.
+#
+# Portée : requêtes émises par les comptes Flux des applications
+# (system:serviceaccount:flux-system:app-*), dans les namespaces platform.io/managed=true.
+# Les pods eux-mêmes sont couverts par Pod Security Admission (restricted) ; ici on contrôle
+# les gabarits des workloads, au moment où l'application les déclare.
+# Exception : platform-protect-prod-data s'applique à TOUT le monde (y compris le prune Flux).
+#
+# Tests : cluster/base/policies/tests (make test-policies).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: platform-workload-images
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [apps]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [deployments, statefulsets]
+      - apiGroups: [batch]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [jobs, cronjobs]
+  matchConditions:
+    - name: tenant-deployer
+      expression: request.userInfo.username.startsWith('system:serviceaccount:flux-system:app-')
+  variables:
+    - name: podSpec
+      expression: "object.kind == 'CronJob' ? object.spec.jobTemplate.spec.template.spec : object.spec.template.spec"
+    - name: containers
+      expression: >-
+        variables.podSpec.containers
+        + (has(variables.podSpec.initContainers) ? variables.podSpec.initContainers : [])
+    - name: orgPrefix
+      expression: "'ghcr.io/${GITHUB_ORG}/'"
+    - name: allowedPrefixes
+      expression: "[variables.orgPrefix, 'ghcr.io/cloudnative-pg/', 'docker.io/valkey/valkey:']"
+    - name: isProd
+      expression: "has(namespaceObject.metadata.labels) && namespaceObject.metadata.labels[?'platform.io/tier'].orValue('') == 'prod'"
+  validations:
+    - expression: variables.containers.all(c, variables.allowedPrefixes.exists(p, c.image.startsWith(p)))
+      messageExpression: "'image non autorisée : seules ' + variables.allowedPrefixes.join(', ') + ' sont acceptées'"
+      reason: Forbidden
+    - expression: variables.containers.all(c, c.image.contains('@sha256:') || (c.image.matches(':[A-Za-z0-9_][A-Za-z0-9_.-]*$') && !c.image.endsWith(':latest')))
+      message: "chaque image doit porter un tag explicite (pas « latest ») ou un digest"
+    - expression: "!variables.isProd || variables.containers.all(c, !c.image.startsWith(variables.orgPrefix) || c.image.contains('@sha256:'))"
+      message: "en production, les images de l'organisation doivent être référencées par digest (@sha256:)"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: platform-workload-shape
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [apps]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [deployments, statefulsets]
+      - apiGroups: [batch]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [jobs, cronjobs]
+  matchConditions:
+    - name: tenant-deployer
+      expression: request.userInfo.username.startsWith('system:serviceaccount:flux-system:app-')
+  variables:
+    - name: podSpec
+      expression: "object.kind == 'CronJob' ? object.spec.jobTemplate.spec.template.spec : object.spec.template.spec"
+    - name: containers
+      expression: >-
+        variables.podSpec.containers
+        + (has(variables.podSpec.initContainers) ? variables.podSpec.initContainers : [])
+    - name: nsApp
+      expression: "has(namespaceObject.metadata.labels) ? namespaceObject.metadata.labels[?'platform.io/app'].orValue('') : ''"
+    - name: labels
+      expression: "has(object.metadata.labels) ? object.metadata.labels : {}"
+  validations:
+    - expression: >-
+        variables.containers.all(c, has(c.resources) && has(c.resources.requests)
+        && 'cpu' in c.resources.requests && 'memory' in c.resources.requests
+        && has(c.resources.limits) && 'memory' in c.resources.limits)
+      message: "chaque conteneur doit déclarer requests.cpu, requests.memory et limits.memory"
+    - expression: "'app.kubernetes.io/name' in variables.labels && variables.labels[?'platform.io/app'].orValue('') == variables.nsApp"
+      messageExpression: "'labels requis : app.kubernetes.io/name et platform.io/app=' + variables.nsApp"
+    - expression: >-
+        (has(variables.podSpec.automountServiceAccountToken) && variables.podSpec.automountServiceAccountToken == false)
+        || (has(object.metadata.annotations) && object.metadata.annotations[?'platform.io/needs-api-token'].orValue('') == 'true')
+      message: "automountServiceAccountToken: false est requis (ou annotation platform.io/needs-api-token: \"true\")"
+    - expression: "!has(variables.podSpec.hostNetwork) || variables.podSpec.hostNetwork == false"
+      message: "hostNetwork interdit"
+    - expression: "!has(variables.podSpec.volumes) || variables.podSpec.volumes.all(v, !has(v.hostPath))"
+      message: "volumes hostPath interdits"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: platform-services
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [services]
+  matchConditions:
+    - name: tenant-deployer
+      expression: request.userInfo.username.startsWith('system:serviceaccount:flux-system:app-')
+  validations:
+    - expression: "!has(object.spec.type) || object.spec.type == 'ClusterIP'"
+      message: "seuls les Services ClusterIP sont autorisés (pas de LoadBalancer, NodePort, ExternalName)"
+    - expression: "!has(object.spec.externalIPs) || size(object.spec.externalIPs) == 0"
+      message: "externalIPs interdit"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: platform-ingress-hosts
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [networking.k8s.io]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [ingresses]
+  matchConditions:
+    - name: tenant-deployer
+      expression: request.userInfo.username.startsWith('system:serviceaccount:flux-system:app-')
+  variables:
+    - name: nsApp
+      expression: "has(namespaceObject.metadata.labels) ? namespaceObject.metadata.labels[?'platform.io/app'].orValue('') : ''"
+    - name: hostPattern
+      expression: "'^' + variables.nsApp + '(-[a-z0-9-]+)?\\\\.' + '${CLUSTER_DOMAIN}'.replace('.', '\\\\.') + '$'"
+  validations:
+    - expression: >-
+        variables.nsApp != ''
+        && (!has(object.spec.rules) || object.spec.rules.all(r, !has(r.host) || r.host.matches(variables.hostPattern)))
+        && (!has(object.spec.tls) || object.spec.tls.all(t, !has(t.hosts) || t.hosts.all(h, h.matches(variables.hostPattern))))
+      messageExpression: "'hôte non autorisé : attendu <' + variables.nsApp + '>[-suffixe].${CLUSTER_DOMAIN}'"
+    - expression: "has(object.spec.rules) && object.spec.rules.all(r, has(r.host))"
+      message: "chaque règle d'Ingress doit préciser un hôte"
+    - expression: "!has(object.spec.ingressClassName) || object.spec.ingressClassName == 'traefik'"
+      message: "ingressClassName doit être traefik"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: platform-postgres
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [postgresql.cnpg.io]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [clusters]
+  matchConditions:
+    - name: tenant-deployer
+      expression: request.userInfo.username.startsWith('system:serviceaccount:flux-system:app-')
+  validations:
+    - expression: "!has(object.spec.imageName) || object.spec.imageName.startsWith('ghcr.io/cloudnative-pg/')"
+      message: "imageName doit provenir de ghcr.io/cloudnative-pg/"
+    - expression: "has(object.spec.resources) && has(object.spec.resources.requests) && 'memory' in object.spec.resources.requests && has(object.spec.resources.limits) && 'memory' in object.spec.resources.limits"
+      message: "spec.resources (requests.memory et limits.memory) est requis"
+    - expression: "!has(object.spec.enableSuperuserAccess) || object.spec.enableSuperuserAccess == false"
+      message: "enableSuperuserAccess interdit"
+---
+# Garde-fou sur les données : pas de suppression d'un Cluster CNPG ni d'un namespace de production
+# sans l'annotation explicite platform.io/allow-delete: "true" (posée par un humain).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: platform-protect-prod-data
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [postgresql.cnpg.io]
+        apiVersions: [v1]
+        operations: [DELETE]
+        resources: [clusters]
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [DELETE]
+        resources: [namespaces, persistentvolumeclaims]
+  validations:
+    - expression: "has(oldObject.metadata.annotations) && oldObject.metadata.annotations[?'platform.io/allow-delete'].orValue('') == 'true'"
+      messageExpression: "'suppression refusée : ' + oldObject.kind + ' de production. Annoter platform.io/allow-delete=\"true\" (décision humaine) avant de supprimer.'"
+      reason: Forbidden

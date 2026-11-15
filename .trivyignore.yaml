@@ -1,0 +1,16 @@
+# Exceptions Trivy justifiées. Toute nouvelle entrée doit être relue par un humain (CODEOWNERS).
+misconfigurations:
+  - id: KSV-0041
+    paths: ["cluster/base/configs/tenant-rbac/tenant-deployer.yaml"]
+    statement: >-
+      Le compte Flux d'une application gère les Secrets de SON namespace uniquement (RoleBinding),
+      nécessaire pour appliquer ses Secrets SOPS déchiffrés. ADR-0006.
+  - id: KSV-0056
+    paths: ["cluster/base/configs/tenant-rbac/tenant-deployer.yaml"]
+    statement: >-
+      Ingress uniquement (pas de NetworkPolicy), dans le namespace de l'application ; les hôtes sont
+      contraints par la VAP platform-ingress-hosts. ADR-0005/0006.
+  # Jeux de test des règles d'admission : volontairement non conformes.
+  - id: KSV-0118
+    paths: ["cluster/base/policies/tests/**"]
+    statement: Données de test (cas refusés exprès).

@@ -1,0 +1,15 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Value
+metadata:
+  name: namespaces
+namespaceSelector:
+  - name: app-hello-staging
+    labels:
+      platform.io/managed: "true"
+      platform.io/app: hello
+      platform.io/tier: staging
+  - name: app-hello-prod
+    labels:
+      platform.io/managed: "true"
+      platform.io/app: hello
+      platform.io/tier: prod
