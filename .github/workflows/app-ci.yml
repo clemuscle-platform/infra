@@ -1,0 +1,218 @@
+# Workflow RÉUTILISABLE de toutes les applications (ADR-0002, ADR-0015).
+# Appel depuis un dépôt d'application :
+#   uses: clemuscle-platform/infra/.github/workflows/app-ci.yml@<sha>   (mis à jour par Renovate)
+# Contrôles requis côté application : test, migration-gate.
+# Publication :
+#   PR avec le label « preview » → artefact pr-<n> (préversion)
+#   push sur main                → artefact main (staging)
+#   étiquette vX.Y.Z             → artefact X.Y.Z (production)
+# La signature cosign keyless porte l'identité de CE workflow (vérifiée par Flux, app-tenants.yaml).
+name: app-ci
+on:
+  workflow_call:
+    inputs:
+      cluster-domain:
+        description: Domaine des préversions (localhost en local, le domaine réel sur Hetzner)
+        type: string
+        default: localhost
+      infra-ref:
+        description: Révision du dépôt infra pour les outils et les règles d'admission
+        type: string
+        default: main
+    secrets:
+      PLATFORM_CI_APP_ID:
+        required: true
+      PLATFORM_CI_APP_PRIVATE_KEY:
+        required: true
+
+permissions: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: infra-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.PLATFORM_CI_APP_ID }}
+          private-key: ${{ secrets.PLATFORM_CI_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: infra
+      - name: Dépôt infra (outils figés, règles d'admission)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository_owner }}/infra
+          ref: ${{ inputs.infra-ref }}
+          path: .infra
+          token: ${{ steps.infra-token.outputs.token }}
+          persist-credentials: false
+      - uses: ./.infra/.github/actions/setup-tools
+        with:
+          infra-path: .infra
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - run: uv sync --frozen
+      - name: Lint et tests
+        run: make lint unit
+      - name: Cohérence platform.yaml / deploy/ et règles d'admission
+        env:
+          INFRA_DIR: .infra
+        run: make validate
+      - name: Gitleaks, Semgrep, Trivy (fichiers)
+        run: make scan
+
+  migration-guard:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      destructive: ${{ steps.guard.outputs.destructive }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: guard
+        name: Migrations destructives ?
+        run: |
+          if python3 scripts/migration-guard.py --base "origin/${{ github.base_ref }}"; then
+            echo "destructive=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "destructive=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  migration-approval:
+    needs: migration-guard
+    if: needs.migration-guard.outputs.destructive == 'true'
+    runs-on: ubuntu-24.04
+    # Environnement protégé dans chaque dépôt d'application : relecteur requis (platform-admins).
+    environment: destructive-migration
+    steps:
+      - run: echo "Migration destructive approuvée par un humain."
+
+  migration-gate:
+    if: always() && github.event_name == 'pull_request'
+    needs: [migration-guard, migration-approval]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Résultat
+        run: |
+          [[ "${{ needs.migration-guard.result }}" == success ]] || exit 1
+          if [[ "${{ needs.migration-guard.outputs.destructive }}" == true ]]; then
+            [[ "${{ needs.migration-approval.result }}" == success ]] || { echo "approbation humaine manquante"; exit 1; }
+          fi
+
+  publish:
+    needs: [test, migration-gate]
+    if: >-
+      always() && needs.test.result == 'success'
+      && (needs.migration-gate.result == 'success' || needs.migration-gate.result == 'skipped')
+      && (
+        (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')))
+        || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'preview'))
+      )
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: infra-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.PLATFORM_CI_APP_ID }}
+          private-key: ${{ secrets.PLATFORM_CI_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: infra
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository_owner }}/infra
+          ref: ${{ inputs.infra-ref }}
+          path: .infra
+          token: ${{ steps.infra-token.outputs.token }}
+          persist-credentials: false
+      - uses: ./.infra/.github/actions/setup-tools
+        with:
+          infra-path: .infra
+      - id: tag
+        name: Tag de l'artefact
+        env:
+          REF: ${{ github.ref }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          case "$REF" in
+            refs/heads/main) tag=main ;;
+            refs/tags/v*)
+              tag="${REF#refs/tags/v}"
+              [[ $tag =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "étiquette non semver : $REF"; exit 1; } ;;
+            *) tag="pr-$PR" ;;
+          esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # flux push artifact et cosign réutilisent les identifiants de docker login.
+      - name: Build, scan, artefact, signature
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          GITHUB_ORG: ${{ github.repository_owner }}
+          SCAN: "true"
+          SIGN: "true"
+        run: scripts/publish.sh
+
+  preview-comment:
+    needs: publish
+    if: github.event_name == 'pull_request' && needs.publish.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          DOMAIN: ${{ inputs.cluster-domain }}
+        with:
+          script: |
+            const app = context.repo.repo;
+            const n = context.issue.number;
+            const url = `https://${app}-pr-${n}.${process.env.DOMAIN}`;
+            const marker = '<!-- platform-preview -->';
+            const body = `${marker}\nPréversion publiée : ${url}\n(déployée par Flux sous quelques minutes ; namespace \`app-${app}-pr-${n}\`)`;
+            const { data } = await github.rest.issues.listComments({ ...context.repo, issue_number: n });
+            const old = data.find(c => c.body.includes(marker));
+            if (old) await github.rest.issues.updateComment({ ...context.repo, comment_id: old.id, body });
+            else await github.rest.issues.createComment({ ...context.repo, issue_number: n, body });
+
+  automerge:
+    # Fusion automatique quand tous les contrôles requis passent (règle d'autonomie des applications).
+    # Le label « needs-human » l'empêche ; la protection de branche garde le dernier mot.
+    if: >-
+      github.event_name == 'pull_request'
+      && !contains(github.event.pull_request.labels.*.name, 'needs-human')
+      && !github.event.pull_request.draft
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Activer l'auto-merge (squash)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR_URL"

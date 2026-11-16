@@ -1,0 +1,78 @@
+# Validation du dépôt infra (identique à « make test ») + garde-fous des règles d'autonomie.
+# Contrôles requis (protection de main) : validate, k3s-gate.
+name: validate
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-tools
+      - name: actionlint
+        run: actionlint
+      - name: Manifestes (kustomize, flux build, kubeconform, cohérence)
+        run: make validate
+      - name: OpenTofu (fmt, validate)
+        run: make validate-tofu
+      - name: Règles d'admission (kyverno test)
+        run: make test-policies
+      - name: RBAC des agents (statique)
+        run: make test-rbac
+      - name: Masquage OTel (vrai collecteur)
+        run: make test-redaction
+      - name: Trivy + Gitleaks
+        run: make scan
+
+  k3s-guard:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    outputs:
+      minor: ${{ steps.guard.outputs.minor }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: guard
+        name: Version mineure de k3s
+        run: |
+          set +e
+          python3 scripts/guards/k3s-minor-guard.py --base "origin/${{ github.base_ref }}"
+          code=$?
+          # 1 = mineure (validation humaine), 2 = refus
+          [[ $code -eq 2 ]] && exit 2
+          exit 0
+
+  k3s-approval:
+    needs: k3s-guard
+    if: needs.k3s-guard.outputs.minor == 'true'
+    runs-on: ubuntu-24.04
+    # Environnement protégé : relecteur requis (platform-admins).
+    environment: k3s-minor
+    steps:
+      - run: echo "Montée de version mineure de k3s approuvée par un humain."
+
+  k3s-gate:
+    if: always() && github.event_name == 'pull_request'
+    needs: [k3s-guard, k3s-approval]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Résultat
+        run: |
+          [[ "${{ needs.k3s-guard.result }}" == success ]] || exit 1
+          if [[ "${{ needs.k3s-guard.outputs.minor }}" == true ]]; then
+            [[ "${{ needs.k3s-approval.result }}" == success ]] || { echo "approbation humaine manquante"; exit 1; }
+          fi

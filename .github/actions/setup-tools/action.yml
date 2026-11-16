@@ -1,0 +1,26 @@
+# Installe les outils figés de la plateforme (scripts/install-tools.sh, sommes de contrôle vérifiées)
+# avec un cache indexé sur le script. Utilisée par les workflows d'infra et des applications.
+name: setup-tools
+description: Outils figés de la plateforme dans ~/.local/bin
+inputs:
+  infra-path:
+    description: Chemin du dépôt infra extrait (contient scripts/install-tools.sh)
+    default: "."
+runs:
+  using: composite
+  steps:
+    - name: Cache des outils
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.local/bin
+          ~/.local/share/uv/tools
+        key: platform-tools-${{ runner.os }}-${{ hashFiles(format('{0}/scripts/install-tools.sh', inputs.infra-path)) }}
+    - name: Installation
+      shell: bash
+      run: |
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        if [[ ! -x $HOME/.local/bin/flux || ! -x $HOME/.local/bin/semgrep ]]; then
+          mkdir -p "$HOME/.local/bin"
+          bash "${{ inputs.infra-path }}/scripts/install-tools.sh"
+        fi

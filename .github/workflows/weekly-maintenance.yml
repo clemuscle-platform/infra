@@ -1,0 +1,37 @@
+# Boucle d'entretien hebdomadaire : ouvre chaque lundi un ticket « entretien » (liste à traiter par un agent).
+name: weekly-maintenance
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  open-issue:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const week = new Date().toISOString().slice(0, 10);
+            const title = `Entretien hebdomadaire ${week}`;
+            const open = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo, state: 'open', labels: 'entretien' });
+            if (open.data.some(i => i.title === title)) return;
+            const body = [
+              'Ticket ouvert automatiquement (docs/runbooks/boucles-exploitation.md, boucle « entretien »).',
+              '',
+              '- [ ] Trier les PR Renovate en attente (fusionner les correctifs verts, évaluer les majeures)',
+              '- [ ] Versions k3s disponibles : correctif à proposer ? mineure à planifier (validation humaine) ?',
+              '- [ ] CVE HIGH/CRITICAL des images en production (trivy image sur les digests déployés)',
+              '- [ ] Sauvegardes : dernière copie hors hébergeur < 36 h, sauvegardes CNPG récentes (kubectl get backups -A)',
+              '- [ ] Espace disque des PVC, quotas proches de la limite (kubectl describe resourcequota -A)',
+              '- [ ] Réconciliations Flux en échec (flux get all -A --status-selector ready=false)',
+              '- [ ] Tickets « incident » ouverts depuis plus de 7 jours',
+              '- [ ] Préversions orphelines (PR fermées dont le namespace existe encore)',
+              '- [ ] 1er lundi du mois : test de restauration d\'une base (runbook restauration-base)',
+            ].join('\n');
+            await github.rest.issues.create({
+              owner: context.repo.owner, repo: context.repo.repo, title, body, labels: ['entretien'] });

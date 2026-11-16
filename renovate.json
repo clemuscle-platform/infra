@@ -1,0 +1,71 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Renovate du dépôt infra (ADR-0013). Correctifs et mineures fusionnés automatiquement si les contrôles passent, sauf composants sensibles.",
+  "extends": ["config:recommended", ":semanticCommits", "helpers:pinGitHubActionDigests"],
+  "timezone": "Europe/Paris",
+  "schedule": ["before 6am on monday,tuesday,wednesday,thursday,friday"],
+  "labels": ["renovate"],
+  "platformAutomerge": true,
+  "flux": { "managerFilePatterns": ["/^cluster/.+\\.ya?ml$/"] },
+  "kubernetes": { "managerFilePatterns": ["/^cluster/.+\\.ya?ml$/"] },
+  "terraform": { "managerFilePatterns": ["/^tofu/.+\\.tf$/"] },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Outils figés de scripts/install-tools.sh",
+      "managerFilePatterns": ["/^scripts/install-tools\\.sh$/"],
+      "matchStrings": ["[A-Z_]+=(?<currentValue>\\S+)\\s+# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?"],
+      "extractVersionTemplate": "{{#if extractVersion}}{{{extractVersion}}}{{else}}^v?(?<version>.+)${{/if}}"
+    },
+    {
+      "customType": "regex",
+      "description": "Version de k3s (Plan SUC et OpenTofu)",
+      "managerFilePatterns": ["/^cluster/hetzner/configs/upgrades/.+\\.ya?ml$/", "/^tofu/envs/hetzner/variables\\.tf$/"],
+      "matchStrings": ["(?:version:|default\\s*=)\\s*\"?(?<currentValue>v\\d+\\.\\d+\\.\\d+\\+k3s\\d+)\"?"],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "k3s-io/k3s",
+      "versioningTemplate": "regex:^v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)\\+k3s(?<build>\\d+)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Version de Flux dans la FluxInstance",
+      "managerFilePatterns": ["/^cluster/base/flux-system/flux-instance\\.yaml$/"],
+      "matchStrings": ["version: \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "fluxcd/flux2",
+      "extractVersionTemplate": "^v(?<version>.+)$"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Correctifs et mineures : fusion automatique si les contrôles requis passent",
+      "matchUpdateTypes": ["patch", "minor", "digest", "pin", "pinDigest"],
+      "automerge": true
+    },
+    {
+      "description": "Majeures : toujours relues par un humain",
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "labels": ["renovate", "needs-human"]
+    },
+    {
+      "description": "k3s : correctifs automatiques ; mineures bloquées par k3s-gate (validation humaine)",
+      "matchDepNames": ["k3s-io/k3s"],
+      "matchUpdateTypes": ["minor"],
+      "automerge": false,
+      "labels": ["renovate", "needs-human", "k3s-minor"]
+    },
+    {
+      "description": "Composants sensibles (Flux, CNPG, kube-hetzner, cert-manager) : jamais de fusion automatique au-delà du correctif",
+      "matchDepNames": ["fluxcd/flux2", "controlplaneio-fluxcd/flux-operator", "cloudnative-pg", "plugin-barman-cloud", "kube-hetzner/kube-hetzner/hcloud", "cert-manager", "quay.io/jetstack/charts/cert-manager"],
+      "matchUpdateTypes": ["minor", "major"],
+      "automerge": false,
+      "labels": ["renovate", "needs-human"]
+    },
+    {
+      "description": "Une version doit avoir au moins 3 jours (laisser passer les retraits)",
+      "matchUpdateTypes": ["patch", "minor", "major"],
+      "minimumReleaseAge": "3 days"
+    }
+  ]
+}

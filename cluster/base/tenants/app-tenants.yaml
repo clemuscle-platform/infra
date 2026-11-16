@@ -270,11 +270,12 @@ spec:
       secretRef:
         name: ghcr-auth
       <<- if eq "${OCI_VERIFY}" "true" >>
+      # Identité du workflow réutilisable (appelé par référence ou par SHA figé).
       verify:
         provider: cosign
         matchOIDCIdentity:
           - issuer: ^https://token\.actions\.githubusercontent\.com$
-            subject: ^https://github\.com/${GITHUB_ORG}/infra/\.github/workflows/app-ci\.ya?ml@refs/.+$
+            subject: ^https://github\.com/${GITHUB_ORG}/infra/\.github/workflows/app-ci\.yml@(refs/(heads|tags)/[A-Za-z0-9._/-]+|[0-9a-f]{40})$
       <<- end >>
     ---
     apiVersion: kustomize.toolkit.fluxcd.io/v1

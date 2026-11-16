@@ -7,19 +7,19 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 GH=https://github.com
 
-FLUX=2.10.0
-FLUX_OPERATOR=0.62.1
-SOPS=3.13.3
-KUBECONFORM=0.8.0
-KUSTOMIZE=5.8.3
-GITLEAKS=8.30.1
-KYVERNO=1.20.0
-TOFU=1.13.9
-TRIVY=0.76.2
-UV=0.13.8
-SEMGREP=1.185.0
-ACTIONLINT=1.7.12
-COSIGN=3.1.4
+FLUX=2.10.0  # renovate: datasource=github-releases depName=fluxcd/flux2
+FLUX_OPERATOR=0.62.1  # renovate: datasource=github-releases depName=controlplaneio-fluxcd/flux-operator
+SOPS=3.13.3  # renovate: datasource=github-releases depName=getsops/sops
+KUBECONFORM=0.8.0  # renovate: datasource=github-releases depName=yannh/kubeconform
+KUSTOMIZE=5.8.3  # renovate: datasource=github-releases depName=kubernetes-sigs/kustomize extractVersion=^kustomize/v(?<version>.+)$
+GITLEAKS=8.30.1  # renovate: datasource=github-releases depName=gitleaks/gitleaks
+KYVERNO=1.20.0  # renovate: datasource=github-releases depName=kyverno/kyverno
+TOFU=1.13.9  # renovate: datasource=github-releases depName=opentofu/opentofu
+TRIVY=0.76.2  # renovate: datasource=github-releases depName=aquasecurity/trivy
+UV=0.13.8  # renovate: datasource=github-releases depName=astral-sh/uv
+SEMGREP=1.185.0  # renovate: datasource=pypi depName=semgrep
+ACTIONLINT=1.7.12  # renovate: datasource=github-releases depName=rhysd/actionlint
+COSIGN=3.1.4  # renovate: datasource=github-releases depName=sigstore/cosign
 
 # fetch <url> <sums-url> <asset-name>
 fetch() {

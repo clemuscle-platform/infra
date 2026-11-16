@@ -1,0 +1,88 @@
+# Plan OpenTofu de l'environnement hetzner sur chaque PR qui touche tofu/.
+# Le plan est affiché, jamais appliqué ici : « tofu apply » se fait via l'environnement « hetzner »
+# (relecteur requis) ou à la main (make deploy ENV=hetzner). Contrôle requis : tofu-gate.
+# Destruction ou remplacement dans le plan → environnement « hetzner-destroy » (validation humaine).
+name: tofu-plan
+on:
+  pull_request:
+    paths: ["tofu/**", "cluster/base/flux-system/**"]
+permissions:
+  contents: read
+  pull-requests: write
+concurrency:
+  group: tofu-plan-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      destructive: ${{ steps.guard.outputs.destructive }}
+      skipped: ${{ steps.creds.outputs.skipped }}
+    env:
+      TF_VAR_state_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
+      TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+      TF_VAR_tailscale_auth_key: ${{ secrets.TAILSCALE_AUTH_KEY }}
+      TF_VAR_s3_access_key: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
+      TF_VAR_s3_secret_key: ${{ secrets.HETZNER_S3_SECRET_KEY }}
+      TF_VAR_ghcr_token: ${{ secrets.GHCR_READ_TOKEN }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
+    steps:
+      - id: creds
+        name: Secrets Hetzner présents ?
+        run: |
+          if [[ -z "$TF_VAR_hcloud_token" ]]; then
+            echo "::notice::Secrets Hetzner absents : plan ignoré (environnement pas encore créé)."
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skipped=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.creds.outputs.skipped == 'false'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: steps.creds.outputs.skipped == 'false'
+        uses: ./.github/actions/setup-tools
+      - if: steps.creds.outputs.skipped == 'false'
+        name: Fichiers locaux (backend, variables, clés)
+        env:
+          BACKEND_HCL: ${{ secrets.TOFU_BACKEND_HCL }}
+          TFVARS: ${{ secrets.TOFU_HETZNER_TFVARS }}
+        run: |
+          umask 077
+          printf '%s' "$BACKEND_HCL" > tofu/envs/hetzner/backend.hcl
+          printf '%s' "$TFVARS" > tofu/envs/hetzner/hetzner.auto.tfvars
+      - if: steps.creds.outputs.skipped == 'false'
+        name: tofu plan
+        run: |
+          tofu -chdir=tofu/envs/hetzner init -input=false -backend-config=backend.hcl
+          tofu -chdir=tofu/envs/hetzner plan -input=false -lock=false -out=tfplan -no-color | tee plan.txt
+      - if: steps.creds.outputs.skipped == 'false'
+        id: guard
+        name: Garde-fou destructions
+        run: |
+          set +e
+          tofu -chdir=tofu/envs/hetzner show -json tfplan | python3 scripts/guards/tofu-destroy-guard.py
+          exit 0
+
+  destroy-approval:
+    needs: plan
+    if: needs.plan.outputs.destructive == 'true'
+    runs-on: ubuntu-24.04
+    environment: hetzner-destroy
+    steps:
+      - run: echo "Destruction ou remplacement approuvé par un humain."
+
+  tofu-gate:
+    if: always()
+    needs: [plan, destroy-approval]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Résultat
+        run: |
+          [[ "${{ needs.plan.result }}" == success ]] || exit 1
+          if [[ "${{ needs.plan.outputs.destructive }}" == true ]]; then
+            [[ "${{ needs.destroy-approval.result }}" == success ]] || { echo "approbation humaine manquante"; exit 1; }
+          fi
