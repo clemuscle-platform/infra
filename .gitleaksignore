@@ -1,0 +1,3 @@
+# Faux positifs historiques (déjà corrigés dans l'arbre courant), un par ligne avec justification.
+# Commentaire listant des noms de variables TF_VAR_* (aucune valeur), corrigé dans de5b40c.
+69085623eae6b02e77dc970fc807a6fb3e562233:tofu/envs/hetzner/hetzner.auto.tfvars.example:generic-api-key:3
