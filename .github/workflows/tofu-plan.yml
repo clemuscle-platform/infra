@@ -26,7 +26,6 @@ jobs:
       TF_VAR_tailscale_auth_key: ${{ secrets.TAILSCALE_AUTH_KEY }}
       TF_VAR_s3_access_key: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
       TF_VAR_s3_secret_key: ${{ secrets.HETZNER_S3_SECRET_KEY }}
-      TF_VAR_ghcr_token: ${{ secrets.GHCR_READ_TOKEN }}
       AWS_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
     steps:
@@ -50,10 +49,12 @@ jobs:
         env:
           BACKEND_HCL: ${{ secrets.TOFU_BACKEND_HCL }}
           TFVARS: ${{ secrets.TOFU_HETZNER_TFVARS }}
+          GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
         run: |
           umask 077
           printf '%s' "$BACKEND_HCL" > tofu/envs/hetzner/backend.hcl
           printf '%s' "$TFVARS" > tofu/envs/hetzner/hetzner.auto.tfvars
+          mkdir -p ~/.config/platform && printf '%s' "$GHCR_READ_TOKEN" > ~/.config/platform/ghcr-read-token
       - if: steps.creds.outputs.skipped == 'false'
         name: tofu plan
         run: |

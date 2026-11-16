@@ -45,8 +45,8 @@ variable "ghcr_username" {
   type        = string
 }
 
-variable "ghcr_token" {
-  description = "PAT classique read:packages (lecture des images et artefacts GHCR)."
+variable "ghcr_token_file" {
+  description = "Chemin LOCAL du PAT classique read:packages (lecture des images et artefacts GHCR)."
   type        = string
   sensitive   = true
 }

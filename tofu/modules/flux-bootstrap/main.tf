@@ -5,7 +5,8 @@
 # ce que chaque environnement impose avec `encryption { ... enforced = true }`.
 
 locals {
-  repo_root = abspath("${path.module}/../../..")
+  ghcr_token = trimspace(file(pathexpand(var.ghcr_token_file)))
+  repo_root  = abspath("${path.module}/../../..")
 
   instance_yaml       = file("${local.repo_root}/cluster/base/flux-system/flux-instance.yaml")
   operator_values     = file("${local.repo_root}/cluster/base/flux-system/flux-operator-values.yaml")
@@ -15,8 +16,8 @@ locals {
     auths = {
       "ghcr.io" = {
         username = var.ghcr_username
-        password = var.ghcr_token
-        auth     = base64encode("${var.ghcr_username}:${var.ghcr_token}")
+        password = local.ghcr_token
+        auth     = base64encode("${var.ghcr_username}:${local.ghcr_token}")
       }
     }
   })

@@ -50,7 +50,9 @@ variable "ghcr_username" {
   type = string
 }
 
-variable "ghcr_token" {
-  type      = string
-  sensitive = true
+variable "ghcr_token_file" {
+  description = "Fichier local contenant le PAT classique read:packages."
+  type        = string
+  default     = "~/.config/platform/ghcr-read-token"
+  sensitive   = true
 }

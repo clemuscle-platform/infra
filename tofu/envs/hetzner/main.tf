@@ -130,5 +130,5 @@ module "flux" {
   github_app_installation_id  = var.github_app_installation_id
   github_app_private_key_file = var.github_app_private_key_file
   ghcr_username               = var.ghcr_username
-  ghcr_token                  = var.ghcr_token
+  ghcr_token_file             = var.ghcr_token_file
 }
