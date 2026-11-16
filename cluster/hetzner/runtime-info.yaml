@@ -33,3 +33,5 @@ data:
   S3_BUCKET_ETCD: CHANGE_ME-etcd
   OFFSITE_S3_ENDPOINT: https://CHANGE_ME.r2.cloudflarestorage.com
   OFFSITE_BUCKET: CHANGE_ME-offsite
+  # alert-bridge : dry-run (journalise les tickets) ou github. Pas de booléen : kustomize enlève les guillemets.
+  ALERT_BRIDGE_MODE: github

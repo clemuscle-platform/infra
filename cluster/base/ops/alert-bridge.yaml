@@ -1,0 +1,139 @@
+# alert-bridge (ADR-0014) : alertes → tickets GitHub. Image publiée par .github/workflows/alert-bridge.yml.
+# MODE=dry-run (local) : journalise les tickets sans appeler GitHub.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform-ops
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: alert-bridge
+  namespace: platform-ops
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alert-bridge
+  namespace: platform-ops
+  labels:
+    app.kubernetes.io/name: alert-bridge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: alert-bridge
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: alert-bridge
+    spec:
+      serviceAccountName: alert-bridge
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-auth
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: alert-bridge
+          image: ghcr.io/${GITHUB_ORG}/alert-bridge:0.1.0
+          env:
+            - {name: GITHUB_ORG, value: "${GITHUB_ORG}"}
+            - {name: MODE, value: "${ALERT_BRIDGE_MODE}"}
+            - {name: GITHUB_APP_PRIVATE_KEY_FILE, value: /var/run/secrets/github-app/private-key.pem}
+          envFrom:
+            - secretRef:
+                # PLATFORM_TOKEN, GITHUB_APP_ID, GITHUB_APP_INSTALLATION_ID (+ private-key.pem monté)
+                name: alert-bridge
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 30
+          resources:
+            requests: {cpu: 5m, memory: 16Mi}
+            limits: {memory: 48Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: github-app
+              mountPath: /var/run/secrets/github-app
+              readOnly: true
+      volumes:
+        - name: github-app
+          secret:
+            secretName: alert-bridge
+            optional: true
+            items:
+              - {key: private-key.pem, path: private-key.pem}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alert-bridge
+  namespace: platform-ops
+spec:
+  selector:
+    app.kubernetes.io/name: alert-bridge
+  ports:
+    - {name: http, port: 8080, targetPort: http}
+---
+# Entrées autorisées : OpenObserve, Flux (notification-controller), Traefik (UptimeRobot, Hetzner).
+# Sortie : DNS et HTTPS (API GitHub).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: alert-bridge
+  namespace: platform-ops
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: alert-bridge
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [platform-observability, flux-system, "${INGRESS_NAMESPACE}"]
+      ports:
+        - {protocol: TCP, port: 8080}
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10]
+      ports:
+        - {protocol: TCP, port: 443}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ghcr-auth
+  namespace: platform-ops
+  annotations:
+    fluxcd.controlplane.io/copyFrom: "flux-system/ghcr-auth"
+type: kubernetes.io/dockerconfigjson

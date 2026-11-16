@@ -99,3 +99,24 @@ stringData:
   RCLONE_CONFIG_DST_ACCESS_KEY_ID: "$P"
   RCLONE_CONFIG_DST_SECRET_ACCESS_KEY: "$P"
 EOF
+
+write_secret cluster/hetzner/ops/secrets/alert-bridge.sops.yaml <<EOF
+apiVersion: v1
+kind: Secret
+metadata: {name: alert-bridge, namespace: platform-ops}
+type: Opaque
+stringData:
+  PLATFORM_TOKEN: "$P-au-moins-24-caracteres"
+  GITHUB_APP_ID: "$P"
+  GITHUB_APP_INSTALLATION_ID: "$P"
+  private-key.pem: "$P"
+EOF
+
+write_secret cluster/hetzner/ops/secrets/flux-alert-bridge.sops.yaml <<EOF
+apiVersion: v1
+kind: Secret
+metadata: {name: flux-alert-bridge, namespace: flux-system}
+type: Opaque
+stringData:
+  headers: "X-Platform-Token: $P"
+EOF

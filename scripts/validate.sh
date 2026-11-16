@@ -24,6 +24,7 @@ declare -A LAYERS=(
   [platform-policies]="cluster/base/policies"
   [platform-tenants]="cluster/base/tenants"
   [apps]="cluster/apps"
+  [platform-ops]="cluster/$ENV/ops"
 )
 
 mapfile -t VARS < <(scripts/runtime-vars.sh "$ENV")

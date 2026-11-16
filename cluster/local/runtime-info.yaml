@@ -26,3 +26,5 @@ data:
   S3_REGION: garage
   S3_BUCKET_PG: platform-pg
   S3_BUCKET_APPS: platform-apps
+  # alert-bridge : dry-run (journalise les tickets) ou github. Pas de booléen : kustomize enlève les guillemets.
+  ALERT_BRIDGE_MODE: dry-run
