@@ -14,7 +14,7 @@ help: ## Affiche cette aide
 tools: ## Installe les outils figés dans ~/.local/bin
 	scripts/install-tools.sh
 
-test: validate validate-tofu test-policies test-rbac scan ## Tous les contrôles hors cluster (comme la CI)
+test: validate validate-tofu test-policies test-rbac test-redaction scan ## Tous les contrôles hors cluster (comme la CI)
 
 build: ## Rend les manifestes de ENV dans out/ENV (sans rien appliquer)
 	scripts/validate.sh $(ENV)
@@ -27,6 +27,9 @@ test-policies: ## Tests des ValidatingAdmissionPolicy (CLI kyverno)
 
 test-rbac: ## Contrôle statique du rôle agent-reader
 	scripts/test-rbac.sh
+
+test-redaction: ## Masquage OTel avec le vrai collecteur (docker)
+	scripts/test-redaction.sh
 
 test-rbac-live: ## Contrôle du rôle agent-reader sur le cluster courant (kubectl auth can-i)
 	scripts/test-rbac.sh --live

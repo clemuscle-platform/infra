@@ -28,6 +28,19 @@ declare -A LAYERS=(
 
 mapfile -t VARS < <(scripts/runtime-vars.sh "$ENV")
 
+step "syntaxe YAML de tous les fichiers (y compris ceux des configMapGenerator)"
+python3 -I - <<'PY2' || err "YAML invalide"
+import pathlib, sys, yaml
+bad = 0
+for f in sorted(pathlib.Path("cluster").rglob("*.y*ml")):
+    try:
+        list(yaml.safe_load_all(f.read_text()))
+    except yaml.YAMLError as e:
+        bad += 1; print(f"{f}: {e}".splitlines()[0])
+sys.exit(1 if bad else 0)
+PY2
+echo "ok"
+
 step "kustomize build ($ENV)"
 for layer in "${!LAYERS[@]}"; do
   kustomize build "${LAYERS[$layer]}" > "$OUT/$layer.kustomize.yaml" || err "kustomize build ${LAYERS[$layer]}"

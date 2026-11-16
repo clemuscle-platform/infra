@@ -9,3 +9,9 @@ paths = [
   '''(^|/)out/''',
   '''(^|/)\.cache/''',
 ]
+
+[[allowlists]]
+description = "Jeu de test du masquage OTel : faux secrets volontaires (préfixe FAUX), vérifiés par check.py"
+paths = [
+  '''^cluster/base/controllers/observability/tests/redaction/input\.jsonl$''',
+]
