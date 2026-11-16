@@ -25,7 +25,8 @@ write_secret() {
 S3_KEY="GK$(hex 12)"
 S3_SECRET="$(hex 32)"
 O2_EMAIL="admin@platform.localhost"
-O2_PASSWORD="$(hex 16)"
+# OpenObserve exige minuscule, majuscule, chiffre et caractère spécial.
+O2_PASSWORD="$(hex 12)Zq7-$(hex 4)"
 BRIDGE_TOKEN="$(hex 24)"
 O2_AUTH="Basic $(printf '%s:%s' "$O2_EMAIL" "$O2_PASSWORD" | base64 -w0)"
 

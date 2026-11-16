@@ -157,9 +157,11 @@ spec:
               H="Authorization: Bearer $GARAGE_ADMIN_TOKEN"
               J="Content-Type: application/json"
               until curl -fsS -H "$H" "$A/v2/GetClusterHealth" >/dev/null 2>&1; do echo "attente de Garage"; sleep 3; done
-              status=$(curl -fsS -H "$H" "$A/v2/GetClusterStatus")
+              # Le JSON de Garage contient des espaces : on les retire avant d'extraire les champs.
+              status=$(curl -fsS -H "$H" "$A/v2/GetClusterStatus" | tr -d ' \n\t')
               node=$(echo "$status" | grep -o '"id":"[0-9a-f]\{64\}"' | head -1 | cut -d'"' -f4)
               ver=$(echo "$status" | grep -o '"layoutVersion":[0-9]*' | cut -d: -f2)
+              [ -n "$node" ] && [ -n "$ver" ] || { echo "réponse GetClusterStatus inattendue : $status"; exit 1; }
               if [ "$ver" = "0" ]; then
                 echo "disposition initiale du nœud $node"
                 curl -fsS -H "$H" -H "$J" -X POST "$A/v2/UpdateClusterLayout" \
@@ -172,11 +174,12 @@ spec:
                   -d "{\"accessKeyId\":\"$AWS_ACCESS_KEY_ID\",\"secretAccessKey\":\"$AWS_SECRET_ACCESS_KEY\",\"name\":\"platform\"}" >/dev/null
               fi
               for b in $BUCKETS; do
-                if ! info=$(curl -fsS -H "$H" "$A/v2/GetBucketInfo?globalAlias=$b" 2>/dev/null); then
+                if ! info=$(curl -fsS -H "$H" "$A/v2/GetBucketInfo?globalAlias=$b" 2>/dev/null | tr -d ' \n\t') || [ -z "$info" ]; then
                   echo "création du bucket $b"
-                  info=$(curl -fsS -H "$H" -H "$J" -X POST "$A/v2/CreateBucket" -d "{\"globalAlias\":\"$b\"}")
+                  info=$(curl -fsS -H "$H" -H "$J" -X POST "$A/v2/CreateBucket" -d "{\"globalAlias\":\"$b\"}" | tr -d ' \n\t')
                 fi
                 id=$(echo "$info" | grep -o '"id":"[0-9a-f]\{64\}"' | head -1 | cut -d'"' -f4)
+                [ -n "$id" ] || { echo "identifiant du bucket $b introuvable"; exit 1; }
                 curl -fsS -H "$H" -H "$J" -X POST "$A/v2/AllowBucketKey" \
                   -d "{\"bucketId\":\"$id\",\"accessKeyId\":\"$AWS_ACCESS_KEY_ID\",\"permissions\":{\"read\":true,\"write\":true,\"owner\":true}}" >/dev/null
               done
