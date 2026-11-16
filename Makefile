@@ -38,8 +38,8 @@ scan: ## Trivy (configuration) + Gitleaks
 	trivy config --quiet --severity HIGH,CRITICAL --exit-code 1 --ignorefile .trivyignore.yaml \
 	  --skip-dirs out --skip-dirs .cache --skip-dirs cluster/base/policies/tests \
 	  --skip-dirs "tofu/envs/*/.terraform" .
-	gitleaks dir . --no-banner --redact
-	gitleaks git . --no-banner --redact
+	gitleaks dir . --no-banner --redact --verbose
+	gitleaks git . --no-banner --redact --verbose
 
 validate-tofu: ## tofu fmt -check + tofu validate (sans backend)
 	scripts/validate-tofu.sh
