@@ -74,6 +74,8 @@ spec:
       limits: {memory: 768Mi}
     config:
       ZO_TELEMETRY: "false"
+      # Garde-fou SSRF : seule exception, la destination d'alerte interne (correspondance exacte).
+      ZO_SSRF_ALLOWED_HOSTS: alert-bridge.platform-ops.svc.cluster.local
       ZO_COMPACT_DATA_RETENTION_DAYS: "30"
       ZO_MEMORY_CACHE_ENABLED: "true"
       ZO_MEMORY_CACHE_MAX_SIZE: "128"
