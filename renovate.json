@@ -63,9 +63,9 @@
       "labels": ["renovate", "needs-human"]
     },
     {
-      "description": "Une version doit avoir au moins 3 jours (laisser passer les retraits)",
+      "description": "Une version doit avoir au moins 7 jours (laisser passer les retraits et les paquets piégés)",
       "matchUpdateTypes": ["patch", "minor", "major"],
-      "minimumReleaseAge": "3 days"
+      "minimumReleaseAge": "7 days"
     }
   ]
 }
