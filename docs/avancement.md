@@ -77,10 +77,13 @@ Ce fichier est mis à jour à chaque étape. Une nouvelle session commence par l
 
 **Vérifié sur le cluster depuis la phase 2** : reprise de cert-manager, initialisation de Garage (après correctif), `copyFrom` dans un ResourceSet. Piège : `copyFrom` n'est interprété que par Flux Operator, jamais dans un Secret appliqué par kustomize-controller (corrigé pour `platform-ops` le 2026-11-21).
 
+**slo-sync (fait le 2026-11-21)** : CronJob dans `platform-observability`, image `slo-sync:0.1.0` publiée et signée par la CI. Vérifié de bout en bout sur le k3s local : 4 alertes créées pour une application de test, alerte rapide déclenchée par OpenObserve et reçue par alert-bridge, second passage sans changement, alertes retirées à la suppression de l'application. Conception et points vérifiés : ADR-0010.
+Pièges : le garde-fou SSRF d'OpenObserve bloque les destinations internes (exception `ZO_SSRF_ALLOWED_HOSTS`) ; le chart ne redémarre pas OpenObserve quand sa configuration change.
+
 **Reste à faire en phase 5 :**
 1. Notifications Flux vers GitHub (statuts de commit) : la GitHub App est en lecture seule, il faudra lui ajouter « Commit statuses: write » (clic de l'utilisateur).
-2. slo-sync : Job qui traduit `deploy/slo.yaml` en alertes OpenObserve (ADR-0010), ou doc de création manuelle.
-3. Test de bout en bout d'une application : nécessite un dépôt pour `app-template` (accord de l'utilisateur).
+2. Test de bout en bout d'une vraie application : nécessite un dépôt pour `app-template` (accord de l'utilisateur).
+3. Renovate : créer la GitHub App `platform-renovate`, puis la variable `RENOVATE_APP_CLIENT_ID` et le secret `RENOVATE_APP_PRIVATE_KEY` (le job est ignoré d'ici là).
 
 **Ménage côté utilisateur** : supprimer les namespaces `app`, `app-demo`, `ci` et la release `gitlab-runner`.
 
