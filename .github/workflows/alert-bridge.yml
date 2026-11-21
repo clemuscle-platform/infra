@@ -1,53 +1,20 @@
-# Construit et publie l'image d'alert-bridge (tests dans le Dockerfile, scan avant envoi, signature).
-# Version = alert-bridge/VERSION ; une version publiée n'est jamais écrasée (incrémenter VERSION).
-# Après publication, mettre à jour le tag dans cluster/base/ops/alert-bridge.yaml (PR).
+# Image d'alert-bridge : voir go-image.yml (tests dans le Dockerfile, scan, publication, signature).
 name: alert-bridge
 on:
   pull_request:
-    paths: ["alert-bridge/**", ".github/workflows/alert-bridge.yml"]
+    paths: ["alert-bridge/**", ".github/workflows/alert-bridge.yml", ".github/workflows/go-image.yml"]
   push:
     branches: [main]
-    paths: ["alert-bridge/**", ".github/workflows/alert-bridge.yml"]
+    paths: ["alert-bridge/**", ".github/workflows/alert-bridge.yml", ".github/workflows/go-image.yml"]
 permissions:
   contents: read
 
 jobs:
-  build:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
+  image:
     permissions:
       contents: read
       packages: write
       id-token: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-tools
-      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - name: Build (amd64) + tests + scan
-        run: |
-          docker buildx build --load -t alert-bridge:ci alert-bridge
-          trivy image --quiet --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 alert-bridge:ci
-      - if: github.event_name == 'push'
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - if: github.event_name == 'push'
-        name: Publication multi-architecture et signature
-        env:
-          IMAGE: ghcr.io/${{ github.repository_owner }}/alert-bridge
-        run: |
-          version=$(tr -d '[:space:]' < alert-bridge/VERSION)
-          if docker buildx imagetools inspect "$IMAGE:$version" >/dev/null 2>&1; then
-            echo "::notice::$IMAGE:$version existe déjà : rien à publier (incrémenter alert-bridge/VERSION)."
-            exit 0
-          fi
-          docker buildx build --platform linux/amd64,linux/arm64 --provenance=mode=max --sbom=true \
-            --metadata-file meta.json -t "$IMAGE:$version" -t "$IMAGE:sha-${GITHUB_SHA::7}" --push alert-bridge
-          digest=$(jq -r '."containerimage.digest"' meta.json)
-          cosign sign --yes "$IMAGE@$digest"
-          echo "publié : $IMAGE:$version@$digest"
+    uses: ./.github/workflows/go-image.yml
+    with:
+      component: alert-bridge
