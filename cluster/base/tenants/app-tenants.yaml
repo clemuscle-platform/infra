@@ -38,18 +38,20 @@ spec:
     <<- $name := printf "app-%s-%s" $app $tier >>
     <<- $host := printf "%s-%s.${CLUSTER_DOMAIN}" $app $tier >>
     <<- $storage := "${STORAGE_CLASS}" >>
-    <<- $mem := "1Gi" >><<- $memReq := "768Mi" >><<- $cpuReq := "500m" >><<- $pvc := "3" >>
+    <<- /* Quotas : de quoi faire une mise à jour progressive (maxSurge 1) avec le module postgres.
+           web 256Mi par pod (+1 pendant la mise à jour) + PostgreSQL 384Mi (+ sidecar Barman). */ ->>
+    <<- $mem := "1536Mi" >><<- $memReq := "768Mi" >><<- $cpuReq := "500m" >><<- $pvc := "3" >>
     <<- if eq $tier "prod" >>
     <<- $host = printf "%s.${CLUSTER_DOMAIN}" $app >>
-    <<- $mem = get inputs "prodMemoryLimit" | default "1Gi" >>
+    <<- $mem = get inputs "prodMemoryLimit" | default "1536Mi" >>
     <<- $memReq = get inputs "prodMemoryRequest" | default "768Mi" >>
     <<- else if eq $tier "staging" >>
-    <<- $mem = "512Mi" >><<- $memReq = "384Mi" >><<- $cpuReq = "250m" >><<- $pvc = "2" >>
+    <<- $mem = "1Gi" >><<- $memReq = "512Mi" >><<- $cpuReq = "250m" >><<- $pvc = "2" >>
     <<- else >>
     <<- $name = printf "app-%s-pr-%s" $app (toString inputs.id) >>
     <<- $host = printf "%s-pr-%s.${CLUSTER_DOMAIN}" $app (toString inputs.id) >>
     <<- $storage = "${PREVIEW_STORAGE_CLASS}" >>
-    <<- $mem = "384Mi" >><<- $memReq = "256Mi" >><<- $cpuReq = "200m" >><<- $pvc = "1" >>
+    <<- $mem = "1Gi" >><<- $memReq = "512Mi" >><<- $cpuReq = "200m" >><<- $pvc = "1" >>
     <<- end >>
     <<- $egress := splitList "," (get inputs "egress" | default "none") >>
     ---
