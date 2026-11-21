@@ -112,6 +112,15 @@ stringData:
   private-key.pem: "$P"
 EOF
 
+write_secret cluster/hetzner/ops/secrets/slo-sync.sops.yaml <<EOF
+apiVersion: v1
+kind: Secret
+metadata: {name: slo-sync, namespace: platform-observability}
+type: Opaque
+stringData:
+  PLATFORM_TOKEN: "$P-au-moins-24-caracteres"
+EOF
+
 write_secret cluster/hetzner/ops/secrets/flux-alert-bridge.sops.yaml <<EOF
 apiVersion: v1
 kind: Secret

@@ -91,6 +91,20 @@ stringData:
   PLATFORM_TOKEN: "$BRIDGE_TOKEN"
 EOF
 
+# Même jeton, pour que slo-sync configure la destination d'alerte d'OpenObserve.
+# Attention : si alert-bridge.sops.yaml existe déjà, ce fichier recevrait un jeton différent ;
+# régénérer alors l'ensemble avec --force.
+write_secret cluster/local/ops/secrets/slo-sync.sops.yaml <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: slo-sync
+  namespace: platform-observability
+type: Opaque
+stringData:
+  PLATFORM_TOKEN: "$BRIDGE_TOKEN"
+EOF
+
 write_secret cluster/local/ops/secrets/flux-alert-bridge.sops.yaml <<EOF
 apiVersion: v1
 kind: Secret

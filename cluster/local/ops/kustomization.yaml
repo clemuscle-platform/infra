@@ -4,3 +4,4 @@ resources:
   - ../../base/ops
   - secrets/alert-bridge.sops.yaml
   - secrets/flux-alert-bridge.sops.yaml
+  - secrets/slo-sync.sops.yaml

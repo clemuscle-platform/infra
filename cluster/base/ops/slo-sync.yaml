@@ -1,0 +1,129 @@
+# slo-sync (ADR-0010) : deploy/slo.yaml des applications → alertes OpenObserve (burn rate).
+# Image publiée par .github/workflows/slo-sync.yml. Tourne dans platform-observability, à côté
+# des identifiants d'OpenObserve (Secret openobserve-root) : ils ne sortent pas de ce namespace.
+# Le Secret slo-sync (jeton d'alert-bridge seul) est fourni par la surcouche (SOPS).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: slo-sync
+  namespace: platform-observability
+automountServiceAccountToken: false
+---
+# Lecture seule des ConfigMaps : RBAC ne sait pas filtrer par label, slo-sync ne lit que
+# celles portant platform.io/slo=true. Aucun accès aux Secrets.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: platform-slo-sync
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: platform-slo-sync
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: platform-slo-sync
+subjects:
+  - kind: ServiceAccount
+    name: slo-sync
+    namespace: platform-observability
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: slo-sync
+  namespace: platform-observability
+  labels:
+    app.kubernetes.io/name: slo-sync
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 270
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: slo-sync
+          annotations:
+            platform.io/needs-api-token: "true"
+        spec:
+          serviceAccountName: slo-sync
+          # Jeton projeté (durée limitée) : nécessaire pour lister les ConfigMaps.
+          automountServiceAccountToken: true
+          restartPolicy: Never
+          imagePullSecrets:
+            - name: ghcr-auth
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: slo-sync
+              image: ghcr.io/${GITHUB_ORG}/slo-sync:0.1.0
+              env:
+                - {name: O2_URL, value: "http://openobserve.platform-observability.svc:5080"}
+                - {name: ALERT_BRIDGE_URL, value: "http://alert-bridge.platform-ops.svc.cluster.local:8080/hooks/generic"}
+                - {name: DRY_RUN, value: "false"}
+                - name: ZO_ROOT_USER_EMAIL
+                  valueFrom: {secretKeyRef: {name: openobserve-root, key: ZO_ROOT_USER_EMAIL}}
+                - name: ZO_ROOT_USER_PASSWORD
+                  valueFrom: {secretKeyRef: {name: openobserve-root, key: ZO_ROOT_USER_PASSWORD}}
+                - name: PLATFORM_TOKEN
+                  valueFrom: {secretKeyRef: {name: slo-sync, key: PLATFORM_TOKEN}}
+              resources:
+                requests: {cpu: 10m, memory: 16Mi}
+                limits: {memory: 64Mi}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: slo-sync
+  namespace: platform-observability
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: slo-sync
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: openobserve
+      ports:
+        - {protocol: TCP, port: 5080}
+    # API Kubernetes : après DNAT du Service kubernetes, l'adresse est celle du nœud (variable).
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - {protocol: TCP, port: 6443}
+        - {protocol: TCP, port: 443}
