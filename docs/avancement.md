@@ -82,7 +82,7 @@ Pièges : le garde-fou SSRF d'OpenObserve bloque les destinations internes (exce
 
 **Reste à faire en phase 5 :**
 1. Notifications Flux vers GitHub (statuts de commit) : la GitHub App est en lecture seule, il faudra lui ajouter « Commit statuses: write » (clic de l'utilisateur).
-2. Test de bout en bout d'une vraie application : nécessite un dépôt pour `app-template` (accord de l'utilisateur).
+2. ~~Test de bout en bout d'une vraie application~~ : fait le 2026-11-21 avec `hello` (dépôts `app-template`, modèle, et `hello` créés ; App `clemuscle-platform-ci`). Trois bugs du modèle corrigés en route : `.infra/` analysé par le lint et les scans, image non remplacée par son digest dans l'artefact (garde-fou ajouté à `publish.sh`), cache de kubeconform absent sur un runner neuf. La production de `hello` attend une étiquette `vX.Y.Z`.
 3. Renovate : créer la GitHub App `platform-renovate`, puis la variable `RENOVATE_APP_CLIENT_ID` et le secret `RENOVATE_APP_PRIVATE_KEY` (le job est ignoré d'ici là).
 
 **Ménage côté utilisateur** : supprimer les namespaces `app`, `app-demo`, `ci` et la release `gitlab-runner`.
