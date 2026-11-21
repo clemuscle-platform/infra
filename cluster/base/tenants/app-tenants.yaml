@@ -40,14 +40,15 @@ spec:
     <<- $storage := "${STORAGE_CLASS}" >>
     <<- /* Quotas : de quoi faire une mise à jour progressive (maxSurge 1) avec le module postgres.
            web 256Mi par pod (+1 pendant la mise à jour) + PostgreSQL 384Mi + sidecar Barman 256Mi.
-           prod : 3×256 + 640 = 1408Mi ; staging : 2×256 + 640 = 1152Mi ; preview (sans sauvegarde) : 896Mi. */ ->>
-    <<- $mem := "2Gi" >><<- $memReq := "768Mi" >><<- $cpuReq := "500m" >><<- $pvc := "3" >>
+           prod : 3×256 + 640 = 1408Mi ; staging : 2×256 + 640 = 1152Mi ; preview (sans sauvegarde) : 896Mi.
+           Requests : marge pour une restauration de test dans le namespace (2e PostgreSQL, ~320Mi). */ ->>
+    <<- $mem := "2Gi" >><<- $memReq := "1Gi" >><<- $cpuReq := "500m" >><<- $pvc := "3" >>
     <<- if eq $tier "prod" >>
     <<- $host = printf "%s.${CLUSTER_DOMAIN}" $app >>
     <<- $mem = get inputs "prodMemoryLimit" | default "2Gi" >>
-    <<- $memReq = get inputs "prodMemoryRequest" | default "768Mi" >>
+    <<- $memReq = get inputs "prodMemoryRequest" | default "1Gi" >>
     <<- else if eq $tier "staging" >>
-    <<- $mem = "1536Mi" >><<- $memReq = "512Mi" >><<- $cpuReq = "250m" >><<- $pvc = "2" >>
+    <<- $mem = "1536Mi" >><<- $memReq = "1Gi" >><<- $cpuReq = "250m" >><<- $pvc = "2" >>
     <<- else >>
     <<- $name = printf "app-%s-pr-%s" $app (toString inputs.id) >>
     <<- $host = printf "%s-pr-%s.${CLUSTER_DOMAIN}" $app (toString inputs.id) >>
