@@ -129,11 +129,21 @@ spec:
       ports:
         - {protocol: TCP, port: 443}
 ---
-apiVersion: v1
-kind: Secret
+# copyFrom n'est interprété que par Flux Operator : la copie passe par un ResourceSet
+# (un Secret posé directement par kustomize-controller arriverait vide).
+apiVersion: fluxcd.controlplane.io/v1
+kind: ResourceSet
 metadata:
-  name: ghcr-auth
-  namespace: platform-ops
-  annotations:
-    fluxcd.controlplane.io/copyFrom: "flux-system/ghcr-auth"
-type: kubernetes.io/dockerconfigjson
+  name: platform-ops-secrets
+  namespace: flux-system
+spec:
+  serviceAccountName: flux-operator
+  resources:
+    - apiVersion: v1
+      kind: Secret
+      metadata:
+        name: ghcr-auth
+        namespace: platform-ops
+        annotations:
+          fluxcd.controlplane.io/copyFrom: "flux-system/ghcr-auth"
+      type: kubernetes.io/dockerconfigjson
