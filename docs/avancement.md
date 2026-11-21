@@ -3,10 +3,10 @@
 Ce fichier est mis à jour à chaque étape. Une nouvelle session commence par le lire, puis par `git log --oneline` dans `infra` et dans `app-template`.
 
 ## Contexte fixe
-- Dépôts locaux : `~/plateforme/infra` et `~/plateforme/app-template`. Pas de remote, et rien n'est poussé sans l'accord de l'utilisateur.
-- Interdits : apply, bootstrap, `helm install`, push, sudo, secrets en clair. kubectl ne sert qu'à lire.
-- Le bac à sable de Claude Code bloque 127.0.0.1:6443. Les lectures kubectl se font donc hors bac à sable.
-- Organisation GitHub provisoire : `clemuscle-platform`, à créer par l'utilisateur. Domaine provisoire : `example.com`.
+- Dépôts : `~/plateforme/infra` (poussé sur `clemuscle-platform/infra`, privé) et `~/plateforme/app-template` (local uniquement, pas de dépôt distant sans accord).
+- Autorisé : push sur `infra`, `tofu apply` sur `tofu/envs/local`, lecture et réconciliation Flux sur le k3s local.
+- Interdit sans accord explicite : Hetzner ou toute dépense, sudo, lecture de `~/.config/sops`, création de dépôt pour une application de test.
+- Le bac à sable de Claude Code bloque 127.0.0.1:6443 : kubectl, flux, tofu et docker tournent hors bac à sable.
 - Clé age locale (publique) : `age18enzprddd0at7gzk4929j4x093u3z52lvmcjv308yua2clfsh5zqx46utu`. La clé Hetzner viendra plus tard.
 
 ## Phases
@@ -17,10 +17,10 @@ Ce fichier est mis à jour à chaque étape. Une nouvelle session commence par l
 | 2. Base + surcouche locale | ✅ 2026-11-15 | `make test` vert : validation local (92 ressources kubeconform), 16 tests VAP, RBAC statique, Trivy, Gitleaks |
 | 3. Surcouche Hetzner + OpenTofu | ✅ 2026-11-15 | `tofu validate` OK (local et hetzner), validation hetzner : 105 ressources kubeconform |
 | 4. app-template | ✅ 2026-11-15 | `make test` vert dans app-template ; images construites en local, 0 CVE HIGH/CRITICAL corrigeable |
-| 5. Pipelines + validation | ⏸ commencée (arrêt volontaire, quota) | voir « Reprise » ci-dessous |
+| 5. Pipelines + validation | 🟡 presque finie | CI verte sur GitHub, Flux déployé sur le k3s local le 2026-11-16 ; reste : voir « Reprise » |
 | 6. Runbooks + documentation | à faire | |
 
-## État du k3s local (2026-11-15)
+## État du k3s local (2026-11-15, avant Flux)
 - v1.35.10+k3s1, WSL2, SQLite, Traefik, servicelb, local-path, metrics-server.
 - Releases Helm installées à la main : cert-manager v1.21.3 (Flux la reprendra), kube-prometheus-stack, sealed-secrets, kagent, nvidia-device-plugin (projet LLM, que Flux ne touche pas), gitlab-runner (à supprimer par l'utilisateur).
 - Espaces de noms orphelins à supprimer par l'utilisateur : `app`, `app-demo`, `ci`.
@@ -68,21 +68,20 @@ Ce fichier est mis à jour à chaque étape. Une nouvelle session commence par l
 - `ZO_S3_*` d'OpenObserve vers Hetzner Object Storage.
 - Le Public Access Block de Hetzner Object Storage (exception Trivy, à vérifier à la main).
 
-## Reprise (arrêt du 2026-11-15, phase 5 commencée)
-**Bug trouvé, à corriger en premier** : `cluster/base/controllers/observability/otel-values.yaml` n'est **pas un YAML valide** (ligne 78, colonne 79 : « mapping values are not allowed here »). Les instructions OTTL non quotées contiennent `: `. Il faut mettre chaque instruction de `log_statements` et `trace_statements` entre quotes simples, en doublant les `'` internes. `make test` ne le détectait pas, parce que le fichier passe par un configMapGenerator sans être analysé. Il faut ajouter une analyse YAML de ce fichier à `scripts/validate.sh`.
+## Reprise (état au 2026-11-21)
+**Sur le k3s local** (Flux 2.10.0, source `clemuscle-platform/infra` lue via la GitHub App `clemuscle-platform-flux`, en lecture seule) :
+- Prêtes : flux-system, platform-controllers, platform-configs, platform-policies, platform-tenants, platform-ops, apps.
+- HelmReleases : cert-manager (release existante reprise), CloudNativePG + plugin Barman, Flux Operator, OpenObserve, collecteur OTel. Garage tourne, son initialisation est passée.
+- alert-bridge tourne dans `platform-ops`.
+- `app-hello-staging` et `app-hello-prod` échouent, c'est attendu : l'artefact `ghcr.io/clemuscle-platform/hello-deploy` n'existe pas tant que `app-template` n'a pas de dépôt.
 
-Fait en phase 5 (non commité au moment de l'arrêt, puis commité en « WIP ») :
-- `scripts/install-tools.sh` : actionlint 1.7.12 et cosign 3.1.4 ajoutés.
-- `scripts/test-redaction.sh` et `tests/redaction/{input.jsonl,check.py}` : test du masquage avec le vrai collecteur (docker, image otel/opentelemetry-collector-contrib:0.163.2). Jamais passé avec succès, à cause du bug YAML ci-dessus. Ajouter `tests/redaction/` à l'allowlist de `.gitleaks.toml` si Gitleaks signale les faux jetons.
+**Vérifié sur le cluster depuis la phase 2** : reprise de cert-manager, initialisation de Garage (après correctif), `copyFrom` dans un ResourceSet. Piège : `copyFrom` n'est interprété que par Flux Operator, jamais dans un Secret appliqué par kustomize-controller (corrigé pour `platform-ops` le 2026-11-21).
 
-SHA des actions relevés (à figer dans les workflows) :
-actions/checkout v7.0.1 3d3c42e5aac5ba805825da76410c181273ba90b1 · astral-sh/setup-uv v10.3.3 68559e99cc807c1eb7e9238fd43a15bba460eec2 · docker/setup-buildx-action v4.4.1 f87e5991a6d7451dcb8d9637bfbc97413f497069 · docker/setup-qemu-action v4.4.0 99012661954931238ded8c8b007157a8430204e1 · docker/login-action v4.8.0 8aa5831fb8d48d8f76594c7ddde61ae58019f550 · sigstore/cosign-installer v4.1.3 756fe2d284c7292c4e9b62c8a28f1e5629c59532 · actions/create-github-app-token v3.3.0 64ab729a6294000f5aa4a4bc0b73d1f32bc45510 · actions/github-script v9.0.0 3a2844b7e9c422d3c10d287c895573f7108da1b3 · renovatebot/github-action v46.3.13 266fef21329c44765ad42f9dea1f01f5d2d91084
+**Reste à faire en phase 5 :**
+1. Notifications Flux vers GitHub (statuts de commit) : la GitHub App est en lecture seule, il faudra lui ajouter « Commit statuses: write » (clic de l'utilisateur).
+2. slo-sync : Job qui traduit `deploy/slo.yaml` en alertes OpenObserve (ADR-0010), ou doc de création manuelle.
+3. Test de bout en bout d'une application : nécessite un dépôt pour `app-template` (accord de l'utilisateur).
 
-Reste à faire en phase 5 :
-1. Workflows `infra` : `validate.yml` (make test + test-redaction + actionlint), `tofu-plan.yml` (garde-fou des destructions → environnement `hetzner-destroy`), `k3s-minor-guard`, `renovate.yml` + `renovate.json` (commentaires `# renovate:` dans install-tools.sh), `weekly-maintenance.yml`.
-2. Workflows réutilisables `app-ci.yml` (tests, scans, migration-guard → environnement `destructive-migration`, build multi-arch, publish.sh SIGN=true, trivy image, commentaire de l'URL de préversion), et `app-template/.github/workflows/ci.yml` qui les appelle.
-3. alert-bridge (Go, image, manifestes) ; slo-sync (écrit plus tard, ou doc de création manuelle des alertes).
-4. Notifications Flux vers GitHub (statuts de commit).
+**Ménage côté utilisateur** : supprimer les namespaces `app`, `app-demo`, `ci` et la release `gitlab-runner`.
+
 Puis phase 6 : runbooks, secrets-de-depart.md, reglages-github.md, CLAUDE.md d'infra, rapport final.
-
-Note sur l'environnement : `tofu validate`, docker et kubectl doivent tourner hors du bac à sable de Claude Code (sockets locales).
