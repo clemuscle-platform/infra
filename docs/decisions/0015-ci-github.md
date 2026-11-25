@@ -18,5 +18,17 @@
 - `actions/create-github-app-token` utilise `client-id` (l'entrée `app-id` est dépréciée).
 - Validé de bout en bout avec `hello` : CI verte, artefact `main` publié, staging déployé par Flux avec l'image référencée par digest, traces dans OpenObserve, alertes SLO créées par slo-sync.
 
+## Dépôts publics et garde-fous (2026-11-25)
+- **Constat** : sur le plan Free, un dépôt **privé** n'a ni règles de branche ni environnements protégés. La fusion automatique de `hello` #1 a eu lieu 13 s après l'ouverture de la PR, avant la fin des tests, et l'approbation des migrations destructives n'était exigée par rien.
+- **Décision** : les dépôts de l'organisation sont **publics** (gratuit, protections réelles). Historique vérifié par gitleaks avant la bascule ; adresses d'auteur remplacées par l'adresse `noreply` de GitHub. Les secrets restent chiffrés par SOPS, les paquets GHCR restent privés.
+- **`scripts/github-guardrails.sh infra|app <dépôt>`** applique, de façon idempotente, les règles versionnées dans `github/rulesets/` :
+  - `main` d'une application : PR obligatoire, contrôles `platform / test` et `platform / migration-gate` émis par GitHub Actions, squash seulement, ni suppression ni force-push ;
+  - `main` d'`infra` : PR, relecture du CODEOWNER (l'humain) et contrôles `validate`, `k3s-gate`. Les administrateurs de l'organisation peuvent fusionner une PR sans relecture, jamais pousser directement ;
+  - étiquettes `v*` immuables (une version publiée ne se réécrit pas) ;
+  - environnements `destructive-migration`, `hetzner-destroy`, `k3s-minor` avec relecture humaine ;
+  - jeton `GITHUB_TOKEN` en lecture par défaut, approbation des PR de contributeurs externes, analyse de secrets et blocage au push.
+- **Fusion automatique** : `gh pr merge --auto` avec un jeton de `clemuscle-platform-ci` limité au dépôt (`contents` et `pull-requests` en écriture). GitHub attend les contrôles requis, et la fusion faite par une App déclenche la CI de `main`. Les PR venues d'un fork ne sont jamais fusionnées ni publiées.
+- **Deux identités** : `clemuscle-platform-ci` (clé dans chaque dépôt d'application, droits bornés par les règles) et `clemuscle-platform-bot` (création et configuration des dépôts, clé seulement sur la machine des agents). La garantie « un humain relit `infra` » suppose que les agents utilisent le bot et non le compte de l'administrateur.
+
 ## Réglages GitHub recommandés
 Ils sont détaillés dans `docs/reglages-github.md` : règles de branche (rulesets) au niveau de l'organisation, contrôles requis, signatures exigées, interdiction des force-push, CODEOWNERS, environnements `production` et `hetzner` avec relecteurs requis pour `tofu apply`, rotation des clés des GitHub Apps tous les 90 jours.

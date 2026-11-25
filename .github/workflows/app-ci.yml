@@ -111,13 +111,16 @@ jobs:
 
   publish:
     needs: [test, migration-gate]
+    # Le dépôt modèle (app-template) teste mais ne publie jamais.
     if: >-
       always() && needs.test.result == 'success'
+      && !github.event.repository.is_template
       && (needs.migration-gate.result == 'success' || needs.migration-gate.result == 'skipped')
       && (
         (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')))
         || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
-        || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'preview'))
+        || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'preview')
+            && github.event.pull_request.head.repo.full_name == github.repository)
       )
     runs-on: ubuntu-24.04
     timeout-minutes: 40
@@ -202,18 +205,29 @@ jobs:
 
   automerge:
     # Fusion automatique quand tous les contrôles requis passent (règle d'autonomie des applications).
-    # Le label « needs-human » l'empêche ; la protection de branche garde le dernier mot.
+    # La règle « main » du dépôt (github/rulesets/app-main.json) exige test et migration-gate :
+    # GitHub attend ces contrôles avant de fusionner. Le label « needs-human » empêche la fusion ;
+    # les PR venues d'un fork ne sont jamais fusionnées automatiquement.
+    # Jeton d'App et non GITHUB_TOKEN : une fusion par GITHUB_TOKEN ne déclencherait pas la CI de main.
     if: >-
       github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
       && !contains(github.event.pull_request.labels.*.name, 'needs-human')
       && !github.event.pull_request.draft
     runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-      pull-requests: write
+    permissions: {}
     steps:
+      - id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.PLATFORM_CI_CLIENT_ID }}
+          private-key: ${{ secrets.PLATFORM_CI_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
       - name: Activer l'auto-merge (squash)
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.token.outputs.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: gh pr merge --auto --squash "$PR_URL"

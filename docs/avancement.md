@@ -81,7 +81,7 @@ Ce fichier est mis à jour à chaque étape. Une nouvelle session commence par l
 Pièges : le garde-fou SSRF d'OpenObserve bloque les destinations internes (exception `ZO_SSRF_ALLOWED_HOSTS`) ; le chart ne redémarre pas OpenObserve quand sa configuration change.
 
 **Production et sauvegardes (2026-11-21)** : `hello` v0.1.0 en production (2 réplicas, image par digest, PDB). Module `postgres` activé par PR, fusionnée automatiquement. Test de sauvegarde et de restauration réussi sur staging (runbook `docs/runbooks/restauration-postgresql.md`). Corrigé en route : quotas trop justes (mise à jour progressive, sidecar Barman, place pour une restauration).
-**Défaut à corriger pour l'autonomie des agents** : la fusion automatique utilise `GITHUB_TOKEN`, donc elle ne déclenche pas la CI de `main` (pas de publication en staging). Contournement temporaire : `workflow_dispatch` sur `main`. Correction : fusionner avec l'identité d'une GitHub App.
+**Fusion automatique (corrigé le 2026-11-25)** : elle n'attendait pas les tests (plan Free privé, aucune règle de branche) et, faite par `GITHUB_TOKEN`, ne déclenchait pas la CI de `main`. Dépôts passés en public avec règles et environnements protégés, fusion par jeton d'App (ADR-0015).
 
 **Reste à faire en phase 5 :**
 1. Notifications Flux vers GitHub (statuts de commit) : la GitHub App est en lecture seule, il faudra lui ajouter « Commit statuses: write » (clic de l'utilisateur).

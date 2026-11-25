@@ -6,7 +6,7 @@ ENV ?= local
 ENVS := local hetzner
 
 .PHONY: help tools test build deploy logs validate validate-tofu test-policies test-rbac test-rbac-live \
-        test-redaction scan fmt plan secrets-local agent-kubeconfig clean
+        test-redaction scan fmt plan secrets-local agent-kubeconfig new-app clean
 
 help: ## Affiche cette aide
 	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
@@ -64,6 +64,9 @@ secrets-local: ## Génère les secrets locaux aléatoires, chiffrés SOPS (n'éc
 
 agent-kubeconfig: ## [HUMAIN] Génère ~/.kube/agent-reader.yaml (jeton 24 h du compte agent-reader)
 	scripts/agent-kubeconfig.sh
+
+new-app: ## Crée une application de bout en bout sous l'identité du bot (NAME=<nom> [KIND=web|api|static])
+	scripts/new-app.sh "$(NAME)" "$(or $(KIND),web)"
 
 clean: ## Supprime les sorties de validation
 	find out -type f -delete 2>/dev/null || true
